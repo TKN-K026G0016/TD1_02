@@ -62,6 +62,9 @@
     <Filter Include="Map">
       <UniqueIdentifier>{5f4c6691-de1d-416c-832c-972593416b3e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Boss">
+      <UniqueIdentifier>{3565265f-5482-427d-b9a4-f2d0f7e6b43f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
@@ -109,6 +112,9 @@
     </ClCompile>
     <ClCompile Include="Stage.cpp">
       <Filter>Stage</Filter>
+    </ClCompile>
+    <ClCompile Include="Boss_coptar.cpp">
+      <Filter>Boss</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -237,6 +243,9 @@
     </ClInclude>
     <ClInclude Include="Stage.h">
       <Filter>Stage</Filter>
+    </ClInclude>
+    <ClInclude Include="Boss_coptar.h">
+      <Filter>Boss</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

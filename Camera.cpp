@@ -9,9 +9,10 @@
 struct Camera {
 	//座標
 	Vector2 pos = { 640, 360 };
+	Vector2 shakeOffset = {};
 
 	//ズーム率
-	float zoom = 1.0f;
+	float zoom = 1.3f;
 
 	//回転量
 	float rotateTheta = 0.0f;
