@@ -288,13 +288,21 @@ Vector2 Transform(Vector2 vector, Matrix3x3 matrix) {
 /// <param name="a">線分の始点</param>
 /// <param name="b">線分の終点</param>
 /// <returns></returns>
-float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b) {
+float GetDistancePointToSegment(Vector2 p, Vector2 a, Vector2 b) {
 	//A→Bのベクトル
 	Vector2 vectorAtoB = { b.x - a.x, b.y - a.y };
 	//A→Pのベクトル
 	Vector2 vectorAtoP = { p.x - a.x, p.y - a.y };
 
 	float abLenSq = vectorAtoB.x * vectorAtoB.x + vectorAtoB.y * vectorAtoB.y;
+
+	//0除算回避
+	if (abLenSq == 0.0f) {
+		float dx = p.x - a.x;
+		float dy = p.y - a.y;
+		return sqrtf(dx * dx + dy * dy);
+	}
+
 	float t = (vectorAtoP.x * vectorAtoB.x + vectorAtoP.y * vectorAtoB.y) / abLenSq;
 
 	t = std::clamp(t, 0.0f, 1.0f);
@@ -314,8 +322,8 @@ float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b) {
 /// <param name="radius1">円1の半径</param>
 /// <param name="circle2Pos">円2の座標</param>
 /// <param name="radius2">円2の半径</param>
-/// <returns>接触しているか</returns>
-bool CheckCollisionCircleVSCircle(Vector2 circle1Pos, float radius1, Vector2 circle2Pos, float radius2) {
+/// <returns>true:接触している false:接触していない</returns>
+bool CheckCollisionCircleVsCircle(const Vector2& circle1Pos,  float radius1, const Vector2& circle2Pos, float radius2) {
 	float disX = circle1Pos.x - circle2Pos.x;
 	float disY = circle1Pos.y - circle2Pos.y;
 	float disTotal = sqrtf(disX * disX + disY * disY);
@@ -331,14 +339,14 @@ bool CheckCollisionCircleVSCircle(Vector2 circle1Pos, float radius1, Vector2 cir
 }
 
 /// <summary>
-/// 矩形と円の当たり判定
+/// 円と矩形の当たり判定
 /// </summary>
 /// <param name="circlePos">円の座標</param>
 /// <param name="circleRadius">円の半径</param>
 /// <param name="boxVertex0">矩形の頂点座標(左上)</param>
 /// <param name="boxVertex3">矩形の頂点座標(右下)</param>
-/// <returns>衝突しているか</returns>
-bool CheckCollisionBoxVSCircle(Vector2 circlePos, float circleRadius, Vector2 vertex[4]) {
+/// <returns>true:接触している false:接触していない</returns>
+bool CheckCollisionCircleVsQuad(const Vector2& circlePos, float circleRadius, const Vector2 vertex[4]) {
 
 	//円が四角の内部にあるかの判定
 	Vector2 edgeX = { vertex[1].x - vertex[0].x, vertex[1].y - vertex[0].y }; // 左上から右上へのベクトル
@@ -364,13 +372,29 @@ bool CheckCollisionBoxVSCircle(Vector2 circlePos, float circleRadius, Vector2 ve
 		Vector2 a = vertex[i];
 		Vector2 b = vertex[(i + 1) % 4];
 
-		float dist = DistancePointToSegment(circlePos, a, b);
+		float dist = GetDistancePointToSegment(circlePos, a, b);
 		if (dist <= circleRadius) {
 			return true;
 		}
 	}
 
 	return false;
+}
+
+/// <summary>
+/// 円とカプセルの当たり判定
+/// </summary>
+/// <param name="circlePos">円の座標</param>
+/// <param name="circleRadius">円の半径</param>
+/// <param name="capsulePos">カプセルの座標</param>
+/// <param name="capsuleRadius">カプセルの半径</param>
+/// <returns>true:接触している false:接触していない</returns>
+bool CheckCollisionCircleVsCapsule( const Vector2& circlePos, float circleRadius, const Vector2 capsulePos[2], float capsuleRadius) {
+	//円とカプセルの線分の最短距離を求める
+	float closestDis = GetDistancePointToSegment(circlePos, capsulePos[0], capsulePos[1]);
+	float disRadius = circleRadius + capsuleRadius;
+
+	return (closestDis <= disRadius);
 }
 
 #pragma endregion

@@ -53,9 +53,10 @@ Matrix3x3 MakeOrthoMatrix(Vector2 viewSize);
 Matrix3x3 MakeViewportMatrix(Vector2 viewSize);
 Vector2 Transform(Vector2 vector, Matrix3x3 matrix);
 
-float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b);
-bool CheckCollisionCircleVSCircle(Vector2 circle1Pos, float radius1, Vector2 circle2Pos, float radius2);
-bool CheckCollisionBoxVSCircle(Vector2 circlePos, float circleRadius, Vector2 vertex[4]);
+float GetDistancePointToSegment(Vector2 p, Vector2 a, Vector2 b);
+bool CheckCollisionCircleVsCircle(const Vector2& circle1Pos, float radius1, const Vector2& circle2Pos, float radius2);
+bool CheckCollisionCircleVsQuad(const Vector2& circlePos, float circleRadius, const Vector2 vertex[4]);
+bool CheckCollisionCircleVsCapsule(const Vector2& circlePos, float circleRadius, const Vector2 capsulePos[2], float capsuleRadius);
 
 float CreateEasedT(float t, EasingMode mode);
 Vector2 UpdateValueByEasing(Vector2 startValue, Vector2 endValue, float easedT);
