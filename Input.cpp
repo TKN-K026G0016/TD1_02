@@ -11,6 +11,8 @@
 constexpr PadButton kGamePadAButton = kPadButton10;
 //Bボタン
 constexpr PadButton kGamePadBButton = kPadButton11;
+//Xボタン
+constexpr PadButton kGamePadXButton = kPadButton12;
 //STARTボタン
 constexpr PadButton kGamePadStartButton = kPadButton4;
 
@@ -347,6 +349,151 @@ bool CheckInputAction(InputAction action) {
 
 		break;
 	}
+
+
+	case InputAction::MoveRight: {
+		//キーボード
+		if (!isConnectGamePad) {
+
+			if (keys[DIK_D]) {
+				return true;
+			} else {
+				return false;
+			}
+
+		}
+		//ゲームパッド
+		else {
+			if (Novice::IsPressButton(0, kGamePadRightButton) ||
+				IsStickPassedDeadZone(stickInputL, StickDirection::Right)) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		break;
+	}
+
+	case InputAction::MoveLeft: {
+		//キーボード
+		if (!isConnectGamePad) {
+
+			if (keys[DIK_A]) {
+				return true;
+			} else {
+				return false;
+			}
+
+		}
+		//ゲームパッド
+		else {
+			if (Novice::IsPressButton(0, kGamePadLeftButton) ||
+				IsStickPassedDeadZone(stickInputL, StickDirection::Left)) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		break;
+	}
+
+	case InputAction::MoveUp: {
+		//キーボード
+		if (!isConnectGamePad) {
+
+			if (keys[DIK_W]) {
+				return true;
+			} else {
+				return false;
+			}
+
+		}
+		//ゲームパッド
+		else {
+			if (Novice::IsPressButton(0, kGamePadUpButton) ||
+				IsStickPassedDeadZone(stickInputL, StickDirection::Up)) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		break;
+	}
+
+	case InputAction::MoveDown: {
+		//キーボード
+		if (!isConnectGamePad) {
+
+			if (keys[DIK_S]) {
+				return true;
+			} else {
+				return false;
+			}
+
+		}
+		//ゲームパッド
+		else {
+			if (Novice::IsPressButton(0, kGamePadDownButton) ||
+				IsStickPassedDeadZone(stickInputL, StickDirection::Down)) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		break;
+	}
+
+
+	case InputAction::Jump: {
+		//キーボード
+		if (!isConnectGamePad) {
+
+			if (keys[DIK_SPACE]) {
+				return true;
+			} else {
+				return false;
+			}
+
+		}
+		//ゲームパッド
+		else {
+			if (Novice::IsPressButton(0, kGamePadAButton)) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		break;
+	}
+
+	case InputAction::Attack: {
+		//キーボード
+		if (!isConnectGamePad) {
+
+			if (keys[DIK_B]) {
+				return true;
+			} else {
+				return false;
+			}
+
+		}
+		//ゲームパッド
+		else {
+			if (Novice::IsPressButton(0, kGamePadXButton)) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		break;
+	}
+
 	}
 
 	return false;
