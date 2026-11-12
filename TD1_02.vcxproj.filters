@@ -1,0 +1,242 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="KamataEngine">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="KamataEngine\Source">
+      <UniqueIdentifier>{d966e9f8-e880-44ae-8586-a08515e4cffc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="KamataEngine\Include">
+      <UniqueIdentifier>{4aae4e40-94f7-4d32-9a91-c0c37a2edf0d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="KamataEngine\Adapter">
+      <UniqueIdentifier>{c6468eb4-788b-4a83-b207-a5f4804e56c5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Audio">
+      <UniqueIdentifier>{04930bad-30a9-4c01-b0c1-8fc12a5e6d0d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Audio\Bgm">
+      <UniqueIdentifier>{7a215660-2f03-47b3-b25f-54048fc4b85b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Audio\Se">
+      <UniqueIdentifier>{d823e2b9-9c73-4d87-a38a-a14b05ce8910}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene">
+      <UniqueIdentifier>{ed5fed5e-4f34-4858-92aa-f969005b3333}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Pause">
+      <UniqueIdentifier>{3ad5c849-ce05-4084-96f4-35e69f8cf517}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Play">
+      <UniqueIdentifier>{05d9205c-1096-4002-9c97-bf86405fd362}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Scene_Manager">
+      <UniqueIdentifier>{fbc06b48-4fa9-4e46-ba03-225e4011e37c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Title">
+      <UniqueIdentifier>{130a00a2-709c-483d-b7ee-60423b7c294f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Input">
+      <UniqueIdentifier>{f25dc3ee-696c-451a-950c-dd41cf26b816}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Texture">
+      <UniqueIdentifier>{9ac449a2-61a5-4680-8c03-677da8d23de1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tool">
+      <UniqueIdentifier>{0006f2d2-f34c-45dc-a7e4-6829b573dbaf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Timer">
+      <UniqueIdentifier>{17aa9b47-0d0b-45ea-99e4-1b2b7cec62cc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Camera">
+      <UniqueIdentifier>{0954822a-d439-4321-a9c2-c8917026278e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Time_Data">
+      <UniqueIdentifier>{06c8d2e7-6714-4ccf-aab3-2b3c15560de3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Stage">
+      <UniqueIdentifier>{b8b252f2-786f-4f3d-9203-cb522628b33b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Map">
+      <UniqueIdentifier>{5f4c6691-de1d-416c-832c-972593416b3e}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="C:\KamataEngine\Adapter\Novice.cpp">
+      <Filter>KamataEngine\Adapter</Filter>
+    </ClCompile>
+    <ClCompile Include="Bgm.cpp">
+      <Filter>Audio\Bgm</Filter>
+    </ClCompile>
+    <ClCompile Include="Se.cpp">
+      <Filter>Audio\Se</Filter>
+    </ClCompile>
+    <ClCompile Include="Pause.cpp">
+      <Filter>Scene\Pause</Filter>
+    </ClCompile>
+    <ClCompile Include="Play.cpp">
+      <Filter>Scene\Play</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene_Manager.cpp">
+      <Filter>Scene\Scene_Manager</Filter>
+    </ClCompile>
+    <ClCompile Include="Title.cpp">
+      <Filter>Scene\Title</Filter>
+    </ClCompile>
+    <ClCompile Include="Input.cpp">
+      <Filter>Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Texture.cpp">
+      <Filter>Texture</Filter>
+    </ClCompile>
+    <ClCompile Include="Tool.cpp">
+      <Filter>Tool</Filter>
+    </ClCompile>
+    <ClCompile Include="Timer.cpp">
+      <Filter>Timer</Filter>
+    </ClCompile>
+    <ClCompile Include="Camera.cpp">
+      <Filter>Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="Time_Data.cpp">
+      <Filter>Time_Data</Filter>
+    </ClCompile>
+    <ClCompile Include="Map.cpp">
+      <Filter>Map</Filter>
+    </ClCompile>
+    <ClCompile Include="Stage.cpp">
+      <Filter>Stage</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\audio\Audio.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\2d\DebugText.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\base\DirectXCommon.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\scene\GameScene.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\input\Input.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\Model.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\base\SafeDelete.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\2d\Sprite.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\base\TextureManager.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\base\WinApp.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\WorldTransform.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\Adapter\Novice.h">
+      <Filter>KamataEngine\Adapter</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\CircleShadow.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\DebugCamera.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\DirectionalLight.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\LightGroup.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\Material.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\Mesh.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\PointLight.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\3d\SpotLight.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\base\StringUtility.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="..\DirectXGame\3d\Camera.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\math\Matrix4x4.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\math\Vector2.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\math\Vector3.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\math\Vector4.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\KamataEngine\DirectXGame\2d\ImGuiManager.h">
+      <Filter>KamataEngine\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="Common.h" />
+    <ClInclude Include="Matrix.h" />
+    <ClInclude Include="Vector2.h" />
+    <ClInclude Include="Bgm.h">
+      <Filter>Audio\Bgm</Filter>
+    </ClInclude>
+    <ClInclude Include="Se.h">
+      <Filter>Audio\Se</Filter>
+    </ClInclude>
+    <ClInclude Include="Pause.h">
+      <Filter>Scene\Pause</Filter>
+    </ClInclude>
+    <ClInclude Include="Play.h">
+      <Filter>Scene\Play</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene_Manager.h">
+      <Filter>Scene\Scene_Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="Title.h">
+      <Filter>Scene\Title</Filter>
+    </ClInclude>
+    <ClInclude Include="Input.h">
+      <Filter>Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Texture.h">
+      <Filter>Texture</Filter>
+    </ClInclude>
+    <ClInclude Include="Tool.h">
+      <Filter>Tool</Filter>
+    </ClInclude>
+    <ClInclude Include="Timer.h">
+      <Filter>Timer</Filter>
+    </ClInclude>
+    <ClInclude Include="Camera.h">
+      <Filter>Camera</Filter>
+    </ClInclude>
+    <ClInclude Include="Time_Data.h">
+      <Filter>Time_Data</Filter>
+    </ClInclude>
+    <ClInclude Include="Map.h">
+      <Filter>Map</Filter>
+    </ClInclude>
+    <ClInclude Include="Stage.h">
+      <Filter>Stage</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
