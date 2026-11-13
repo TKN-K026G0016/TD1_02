@@ -1,4 +1,6 @@
 #include "input.h"
+#include "PortalConfig.h"
+#include <cstring>
 #include "vector2.h"
 
 #include <Novice.h>
@@ -11,8 +13,6 @@
 constexpr PadButton kGamePadAButton = kPadButton10;
 //Bボタン
 constexpr PadButton kGamePadBButton = kPadButton11;
-//Xボタン
-constexpr PadButton kGamePadXButton = kPadButton12;
 //STARTボタン
 constexpr PadButton kGamePadStartButton = kPadButton4;
 
@@ -193,7 +193,8 @@ bool CheckInputAction(InputAction action) {
 
 			if (keys[DIK_A] && !preKeys[DIK_A]) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 
@@ -203,7 +204,8 @@ bool CheckInputAction(InputAction action) {
 			if (Novice::IsTriggerButton(0, kGamePadLeftButton) ||
 				(IsStickPassedDeadZone(stickInputL, StickDirection::Left) && !IsStickPassedDeadZone(preStickInputL, StickDirection::Left))) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -217,7 +219,8 @@ bool CheckInputAction(InputAction action) {
 
 			if (keys[DIK_D] && !preKeys[DIK_D]) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 
@@ -227,7 +230,8 @@ bool CheckInputAction(InputAction action) {
 			if (Novice::IsTriggerButton(0, kGamePadRightButton) ||
 				(IsStickPassedDeadZone(stickInputL, StickDirection::Right) && !IsStickPassedDeadZone(preStickInputL, StickDirection::Right))) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -241,7 +245,8 @@ bool CheckInputAction(InputAction action) {
 
 			if (keys[DIK_W] && !preKeys[DIK_W]) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 
@@ -251,7 +256,8 @@ bool CheckInputAction(InputAction action) {
 			if (Novice::IsTriggerButton(0, kGamePadUpButton) ||
 				(IsStickPassedDeadZone(stickInputL, StickDirection::Up) && !IsStickPassedDeadZone(preStickInputL, StickDirection::Up))) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -265,7 +271,8 @@ bool CheckInputAction(InputAction action) {
 
 			if (keys[DIK_S] && !preKeys[DIK_S]) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 
@@ -275,7 +282,8 @@ bool CheckInputAction(InputAction action) {
 			if (Novice::IsTriggerButton(0, kGamePadDownButton) ||
 				(IsStickPassedDeadZone(stickInputL, StickDirection::Down) && !IsStickPassedDeadZone(preStickInputL, StickDirection::Down))) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -288,9 +296,11 @@ bool CheckInputAction(InputAction action) {
 		//キーボード
 		if (!isConnectGamePad) {
 			if ((keys[DIK_RETURN] && !preKeys[DIK_RETURN])
-				|| (keys[DIK_SPACE] && !preKeys[DIK_SPACE])) {
+				|| (keys[DIK_SPACE] && !preKeys[DIK_SPACE])
+				|| (keys[DIK_J] && !preKeys[DIK_J])) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -298,7 +308,8 @@ bool CheckInputAction(InputAction action) {
 		else {
 			if (Novice::IsTriggerButton(0, kGamePadAButton) || Novice::IsTriggerButton(0, kGamePadStartButton)) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -312,7 +323,8 @@ bool CheckInputAction(InputAction action) {
 		if (!isConnectGamePad) {
 			if (keys[DIK_ESCAPE] && !preKeys[DIK_ESCAPE]) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -320,7 +332,8 @@ bool CheckInputAction(InputAction action) {
 		else {
 			if (Novice::IsTriggerButton(0, kGamePadBButton) || Novice::IsTriggerButton(0, kGamePadBButton)) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -334,7 +347,8 @@ bool CheckInputAction(InputAction action) {
 		if (!isConnectGamePad) {
 			if (keys[DIK_ESCAPE] && !preKeys[DIK_ESCAPE]) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
@@ -342,158 +356,14 @@ bool CheckInputAction(InputAction action) {
 		else {
 			if (Novice::IsTriggerButton(0, kGamePadStartButton) || Novice::IsTriggerButton(0, kGamePadStartButton)) {
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		}
 
 		break;
 	}
-
-
-	case InputAction::MoveRight: {
-		//キーボード
-		if (!isConnectGamePad) {
-
-			if (keys[DIK_D]) {
-				return true;
-			} else {
-				return false;
-			}
-
-		}
-		//ゲームパッド
-		else {
-			if (Novice::IsPressButton(0, kGamePadRightButton) ||
-				IsStickPassedDeadZone(stickInputL, StickDirection::Right)) {
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		break;
-	}
-
-	case InputAction::MoveLeft: {
-		//キーボード
-		if (!isConnectGamePad) {
-
-			if (keys[DIK_A]) {
-				return true;
-			} else {
-				return false;
-			}
-
-		}
-		//ゲームパッド
-		else {
-			if (Novice::IsPressButton(0, kGamePadLeftButton) ||
-				IsStickPassedDeadZone(stickInputL, StickDirection::Left)) {
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		break;
-	}
-
-	case InputAction::MoveUp: {
-		//キーボード
-		if (!isConnectGamePad) {
-
-			if (keys[DIK_W]) {
-				return true;
-			} else {
-				return false;
-			}
-
-		}
-		//ゲームパッド
-		else {
-			if (Novice::IsPressButton(0, kGamePadUpButton) ||
-				IsStickPassedDeadZone(stickInputL, StickDirection::Up)) {
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		break;
-	}
-
-	case InputAction::MoveDown: {
-		//キーボード
-		if (!isConnectGamePad) {
-
-			if (keys[DIK_S]) {
-				return true;
-			} else {
-				return false;
-			}
-
-		}
-		//ゲームパッド
-		else {
-			if (Novice::IsPressButton(0, kGamePadDownButton) ||
-				IsStickPassedDeadZone(stickInputL, StickDirection::Down)) {
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		break;
-	}
-
-
-	case InputAction::Jump: {
-		//キーボード
-		if (!isConnectGamePad) {
-
-			if (keys[DIK_SPACE]) {
-				return true;
-			} else {
-				return false;
-			}
-
-		}
-		//ゲームパッド
-		else {
-			if (Novice::IsPressButton(0, kGamePadAButton)) {
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		break;
-	}
-
-	case InputAction::Attack: {
-		//キーボード
-		if (!isConnectGamePad) {
-
-			if (keys[DIK_B]) {
-				return true;
-			} else {
-				return false;
-			}
-
-		}
-		//ゲームパッド
-		else {
-			if (Novice::IsPressButton(0, kGamePadXButton)) {
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		break;
-	}
-
 	}
 
 	return false;
