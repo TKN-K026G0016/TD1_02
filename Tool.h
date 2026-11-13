@@ -43,6 +43,11 @@ Vector2i ConvertPosWToSUI(Vector2 posW);
 
 void SetVertex(Vector2 pos, Vector2 size, float rotateTheta, Vector2 vertex[kVertexNum]);
 
+float Dot(const Vector2& pos1, const Vector2& pos2, const Vector2& pos3);
+float Dot(const Vector2& v1, const Vector2& v2);
+float CrossProduct(const Vector2& pos1, const Vector2& pos2, const Vector2& pos3);
+float CrossProduct(const Vector2& v1, const Vector2& v2);
+
 Matrix3x3 Multiply(Matrix3x3 matrix1, Matrix3x3 matrix2);
 Matrix3x3 MakeRotateMatrix(float theta);
 Matrix3x3 MakeScaleMatrix(Vector2 size);
@@ -54,9 +59,13 @@ Matrix3x3 MakeViewportMatrix(Vector2 viewSize);
 Vector2 Transform(Vector2 vector, Matrix3x3 matrix);
 
 float GetDistancePointToSegment(Vector2 p, Vector2 a, Vector2 b);
+float GetDistanceSegmentToSegment(const Vector2& startPos1, const Vector2& endPos1, const Vector2& startPos2, const Vector2& endPos2);
+
+bool CheckCollisionSegmentVsSegment(const Vector2& startPos1, const Vector2& endPos1, const Vector2& startPos2, const Vector2& endPos2);
 bool CheckCollisionCircleVsCircle(const Vector2& circle1Pos, float radius1, const Vector2& circle2Pos, float radius2);
 bool CheckCollisionCircleVsQuad(const Vector2& circlePos, float circleRadius, const Vector2 vertex[4]);
 bool CheckCollisionCircleVsCapsule(const Vector2& circlePos, float circleRadius, const Vector2 capsulePos[2], float capsuleRadius);
+bool CheckCollisionCapsuleVsCapsule(const Vector2 capsule1Pos[2], float capsule1Radius, const Vector2 capsule2Pos[2], float capsule2Radius);
 
 float CreateEasedT(float t, EasingMode mode);
 Vector2 UpdateValueByEasing(Vector2 startValue, Vector2 endValue, float easedT);

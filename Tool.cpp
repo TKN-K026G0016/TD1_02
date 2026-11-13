@@ -70,6 +70,58 @@ Vector2i ConvertPosWToSUI(Vector2 posW) {
 
 #pragma endregion
 
+#pragma region 関数: 計算関係
+
+/// <summary>
+/// 内積の算出処理(Vec1To2とVec1To3)
+/// </summary>
+/// <param name="pos1">点1の座標</param>
+/// <param name="pos2">点2の座標</param>
+/// <param name="pos3">点3の座標</param>
+/// <returns>(Vec1To2とVec1To3の内積</returns>
+float Dot(const Vector2& pos1, const Vector2& pos2, const Vector2& pos3) {
+	Vector2 vec1To2 = { pos2.x - pos1.x, pos2.y - pos1.y };
+	Vector2 vec1To3 = { pos3.x - pos1.x, pos3.y - pos1.y };
+
+	return vec1To2.x * vec1To3.x + vec1To2.y * vec1To3.y;
+}
+
+/// <summary>
+/// 内積の算出処理
+/// </summary>
+/// <param name="v1">ベクトル1</param>
+/// <param name="v2">ベクトル2</param>
+/// <returns>ベクトル1と2の内積</returns>
+float Dot(const Vector2& v1, const Vector2& v2) {
+	return v1.x * v2.x + v1.y * v2.y;
+}
+
+/// <summary>
+/// 外積の算出処理(Vec1To2とVec1To3)
+/// </summary>
+/// <param name="pos1">点1の座標</param>
+/// <param name="pos2">点2の座標</param>
+/// <param name="pos3">点3の座標</param>
+/// <returns>(Vec1To2とVec1To3の外積</returns>
+float CrossProduct(const Vector2& pos1, const Vector2& pos2, const Vector2& pos3) {
+	Vector2 vec1To2 = { pos2.x - pos1.x, pos2.y - pos1.y };
+	Vector2 vec1To3 = { pos3.x - pos1.x, pos3.y - pos1.y };
+
+	return vec1To2.x * vec1To3.y - vec1To2.y * vec1To3.x;
+}
+
+/// <summary>
+/// 外積の算出処理
+/// </summary>
+/// <param name="v1">ベクトル1</param>
+/// <param name="v2">ベクトル2</param>
+/// <returns>ベクトル1と2の外積</returns>
+float CrossProduct(const Vector2& v1, const Vector2& v2) {
+	return v1.x * v2.y - v1.y * v2.x;
+}
+
+#pragma endregion
+
 #pragma region 関数: 行列関係
 
 /// <summary>
@@ -284,22 +336,22 @@ Vector2 Transform(Vector2 vector, Matrix3x3 matrix) {
 /// <summary>
 /// 点と線分の最短距離を求める
 /// </summary>
-/// <param name="p">点の座標</param>
-/// <param name="a">線分の始点</param>
-/// <param name="b">線分の終点</param>
-/// <returns></returns>
-float GetDistancePointToSegment(Vector2 p, Vector2 a, Vector2 b) {
+/// <param name="pointPos">点の座標</param>
+/// <param name="startPos">線分の始点</param>
+/// <param name="endPos">線分の終点</param>
+/// <returns>closestDis</returns>
+float GetDistancePointToSegment(Vector2 pointPos, Vector2 startPos, Vector2 endPos) {
 	//A→Bのベクトル
-	Vector2 vectorAtoB = { b.x - a.x, b.y - a.y };
+	Vector2 vectorAtoB = { endPos.x - startPos.x, endPos.y - startPos.y };
 	//A→Pのベクトル
-	Vector2 vectorAtoP = { p.x - a.x, p.y - a.y };
+	Vector2 vectorAtoP = { pointPos.x - startPos.x, pointPos.y - startPos.y };
 
 	float abLenSq = vectorAtoB.x * vectorAtoB.x + vectorAtoB.y * vectorAtoB.y;
 
 	//0除算回避
 	if (abLenSq == 0.0f) {
-		float dx = p.x - a.x;
-		float dy = p.y - a.y;
+		float dx = pointPos.x - startPos.x;
+		float dy = pointPos.y - startPos.y;
 		return sqrtf(dx * dx + dy * dy);
 	}
 
@@ -307,12 +359,65 @@ float GetDistancePointToSegment(Vector2 p, Vector2 a, Vector2 b) {
 
 	t = std::clamp(t, 0.0f, 1.0f);
 
-	Vector2 closest = { a.x + vectorAtoB.x * t, a.y + vectorAtoB.y * t };
+	Vector2 closest = { startPos.x + vectorAtoB.x * t, startPos.y + vectorAtoB.y * t };
 
-	float dx = p.x - closest.x;
-	float dy = p.y - closest.y;
+	float dx = pointPos.x - closest.x;
+	float dy = pointPos.y - closest.y;
 
 	return sqrtf(dx * dx + dy * dy);
+}
+
+/// <summary>
+/// 線分と線分の最短距離の算出処理
+/// </summary>
+/// <param name="startPos1">線分1の始点</param>
+/// <param name="endPos1">線分1の終点</param>
+/// <param name="startPos2">線分2の始点</param>
+/// <param name="endPos2">線分2の終点</param>
+/// <returns>closestDis</returns>
+float GetDistanceSegmentToSegment(const Vector2& startPos1, const Vector2& endPos1, const Vector2& startPos2, const Vector2& endPos2) {
+	//交差しているなら、0.0fで返す
+	if (CheckCollisionSegmentVsSegment(startPos1, endPos1, startPos2, endPos2)) {
+		return 0.0f;
+	}
+
+	//交差していない際の判定
+	float dis1 = GetDistancePointToSegment(startPos1, startPos2, endPos2);
+	float dis2 = GetDistancePointToSegment(endPos1, startPos2, endPos2);
+	float dis3 = GetDistancePointToSegment(startPos2, startPos1, endPos1);
+	float dis4 = GetDistancePointToSegment(endPos2, startPos1, endPos1);
+
+	return (std::min)({ dis1, dis2, dis3, dis4 });
+}
+
+/// <summary>
+/// 線分同士の当たり判定(交差しているか？)
+/// </summary>
+/// <param name="startPos1">線分1の始点</param>
+/// <param name="endPos1">線分1の終点</param>
+/// <param name="startPos2">線分2の始点</param>
+/// <param name="endPos2">線分2の終点</param>
+/// <returns>true:交差している false:交差していない</returns>
+bool CheckCollisionSegmentVsSegment(const Vector2& startPos1, const Vector2& endPos1, const Vector2& startPos2, const Vector2& endPos2) {
+	//線分1に対して、始点2と終点2が反対側にあるか、同一線上にあるか
+	float cross1 = CrossProduct(startPos1, endPos1, startPos2);
+	float cross2 = CrossProduct(startPos1, endPos1, endPos2);
+
+	//線分2に対して、始点1と終点1が反対側にあるか、同一線上にあるか
+	float cross3 = CrossProduct(startPos2, endPos2, startPos1);
+	float cross4 = CrossProduct(startPos2, endPos2, endPos1);
+
+	const float kEpsilon = 0.0001f;
+
+	// 共線ケース
+	if (fabsf(cross1) < kEpsilon &&
+		fabsf(cross2) < kEpsilon &&
+		fabsf(cross3) < kEpsilon &&
+		fabsf(cross4) < kEpsilon) {
+		return false;
+	}
+
+	return (cross1 * cross2 <= 0.0f && cross3 * cross4 <= 0.0f);
 }
 
 /// <summary>
@@ -386,13 +491,29 @@ bool CheckCollisionCircleVsQuad(const Vector2& circlePos, float circleRadius, co
 /// </summary>
 /// <param name="circlePos">円の座標</param>
 /// <param name="circleRadius">円の半径</param>
-/// <param name="capsulePos">カプセルの座標</param>
+/// <param name="capsulePos">カプセルの座標(始点, 終点)</param>
 /// <param name="capsuleRadius">カプセルの半径</param>
 /// <returns>true:接触している false:接触していない</returns>
 bool CheckCollisionCircleVsCapsule( const Vector2& circlePos, float circleRadius, const Vector2 capsulePos[2], float capsuleRadius) {
 	//円とカプセルの線分の最短距離を求める
 	float closestDis = GetDistancePointToSegment(circlePos, capsulePos[0], capsulePos[1]);
 	float disRadius = circleRadius + capsuleRadius;
+
+	return (closestDis <= disRadius);
+}
+
+/// <summary>
+/// カプセル同士の当たり判定
+/// </summary>
+/// <param name="capsule1Pos">カプセル1の座標(始点, 終点)</param>
+/// <param name="capsule1Radius">カプセル1の半径</param>
+/// <param name="capsule2Pos">カプセル2の座標(始点, 終点)</param>
+/// <param name="capsule2Radius">カプセル2の半径</param>
+/// <returns>true:接触している false:接触していない</returns>
+bool CheckCollisionCapsuleVsCapsule(const Vector2 capsule1Pos[2], float capsule1Radius, const Vector2 capsule2Pos[2], float capsule2Radius) {
+	//互いの中心線分の最短距離
+	float closestDis = GetDistanceSegmentToSegment(capsule1Pos[0], capsule1Pos[1], capsule2Pos[0], capsule2Pos[1]);
+	float disRadius = capsule1Radius + capsule2Radius;
 
 	return (closestDis <= disRadius);
 }
