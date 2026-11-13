@@ -115,14 +115,14 @@ bool PortalTentacle::HitsCircle(Vector2 target, float radius) const {
     const Vector2 b = hasAnchor_ ? Lerp(origin_, end_, amount_)
         : Add(origin_, Mul(direction_, PortalConfig::kAttackReach * amount_));
     const Vector2 segment = Sub(b, a);
-    const float lengthSquared = Dot(segment, segment);
+    const float lengthSquared = PortalMath::Dot(segment, segment);
     if (lengthSquared < 0.0001f) return false;
-    const float t = Clamp(Dot(Sub(target, a), segment) / lengthSquared, 0.0f, 1.0f);
+    const float t = Clamp(PortalMath::Dot(Sub(target, a), segment) / lengthSquared, 0.0f, 1.0f);
     const Vector2 closest = Add(a, Mul(segment, t));
     const float thickness = hasAnchor_ ? 14.0f : 22.0f;
     const Vector2 delta = Sub(target, closest);
     const float hitRadius = radius + thickness;
-    return Dot(delta, delta) <= hitRadius * hitRadius;
+    return PortalMath::Dot(delta, delta) <= hitRadius * hitRadius;
 }
 
 void PortalTentacle::Draw(Vector2 playerPosition) const {
