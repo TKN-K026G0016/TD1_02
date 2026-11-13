@@ -6,6 +6,8 @@
 #include <Novice.h>
 #include <cmath>
 
+#include "Texture.h"
+
 namespace {
     float Clamp01(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 }
@@ -90,6 +92,10 @@ void BossVisualEffect::DrawBody(Vector2 pos) const {
         0xFF9090FF : 0xFFFFFFFF;
     if (lean != 0.0f)PortalDraw::RotatedBox(draw, 256.0f, 256.0f, lean, color);
     else PortalDraw::Box(draw, 256.0f, 256.0f, color);
+
+
+    Texture texture = GetTexture(TextureType::BossBodyForm1);
+    DrawTextureAsObj(texture, pos, Vector2(256, 256), 0.0f, false);
 }
 
 void BossVisualEffect::DrawFront() const {
