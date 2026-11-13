@@ -187,6 +187,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Bgm.cpp" />
+    <ClCompile Include="BossVisualEffect.cpp" />
     <ClCompile Include="Boss_coptar.cpp" />
     <ClCompile Include="C:\KamataEngine\Adapter\Novice.cpp" />
     <ClCompile Include="Camera.cpp" />
@@ -195,6 +196,10 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Map.cpp" />
     <ClCompile Include="Pause.cpp" />
     <ClCompile Include="Play.cpp" />
+    <ClCompile Include="PortalInput.cpp" />
+    <ClCompile Include="PortalPlayer.cpp" />
+    <ClCompile Include="PortalArena.cpp" />
+    <ClCompile Include="PortalTentacle.cpp" />
     <ClCompile Include="Scene_Manager.cpp" />
     <ClCompile Include="Se.cpp" />
     <ClCompile Include="Stage.cpp" />
@@ -207,6 +212,9 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   <ItemGroup>
     <ClInclude Include="..\DirectXGame\3d\Camera.h" />
     <ClInclude Include="Bgm.h" />
+    <ClInclude Include="BossBattleSettings.h" />
+    <ClInclude Include="BossStage1Tuning.h" />
+    <ClInclude Include="BossVisualEffect.h" />
     <ClInclude Include="Boss_coptar.h" />
     <ClInclude Include="C:\KamataEngine\DirectXGame\base\StringUtility.h" />
     <ClInclude Include="C:\KamataEngine\DirectXGame\math\Matrix4x4.h" />
@@ -241,6 +249,14 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="Pause.h" />
     <ClInclude Include="Play.h" />
+    <ClInclude Include="PortalConfig.h" />
+    <ClInclude Include="PortalDraw.h" />
+    <ClInclude Include="PortalInput.h" />
+    <ClInclude Include="PortalMath.h" />
+    <ClInclude Include="PortalPlayer.h" />
+    <ClInclude Include="PortalArena.h" />
+    <ClInclude Include="PortalTentacle.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="Scene_Manager.h" />
     <ClInclude Include="Se.h" />
     <ClInclude Include="Stage.h" />
@@ -250,6 +266,9 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Title.h" />
     <ClInclude Include="Tool.h" />
     <ClInclude Include="Vector2.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="TD1_02.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
