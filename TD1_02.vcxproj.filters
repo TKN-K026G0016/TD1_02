@@ -62,6 +62,12 @@
     <Filter Include="Map">
       <UniqueIdentifier>{5f4c6691-de1d-416c-832c-972593416b3e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Boss">
+      <UniqueIdentifier>{3565265f-5482-427d-b9a4-f2d0f7e6b43f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Player">
+      <UniqueIdentifier>{5c00e8a9-85d2-4231-8cdc-3bc978f8c382}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
@@ -109,6 +115,24 @@
     </ClCompile>
     <ClCompile Include="Stage.cpp">
       <Filter>Stage</Filter>
+    </ClCompile>
+    <ClCompile Include="Boss_coptar.cpp">
+      <Filter>Boss</Filter>
+    </ClCompile>
+    <ClCompile Include="BossVisualEffect.cpp">
+      <Filter>Boss</Filter>
+    </ClCompile>
+    <ClCompile Include="PortalArena.cpp">
+      <Filter>Player</Filter>
+    </ClCompile>
+    <ClCompile Include="PortalInput.cpp">
+      <Filter>Player</Filter>
+    </ClCompile>
+    <ClCompile Include="PortalPlayer.cpp">
+      <Filter>Player</Filter>
+    </ClCompile>
+    <ClCompile Include="PortalTentacle.cpp">
+      <Filter>Player</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -238,5 +262,42 @@
     <ClInclude Include="Stage.h">
       <Filter>Stage</Filter>
     </ClInclude>
+    <ClInclude Include="Boss_coptar.h">
+      <Filter>Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="BossBattleSettings.h">
+      <Filter>Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="BossStage1Tuning.h">
+      <Filter>Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="BossVisualEffect.h">
+      <Filter>Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="PortalArena.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="PortalConfig.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="PortalDraw.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="PortalInput.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="PortalMath.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="PortalPlayer.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="PortalTentacle.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="TD1_02.rc" />
   </ItemGroup>
 </Project>
