@@ -64,7 +64,7 @@ int PortalPlayer::FindAnchor(Vector2 direction, const Vector2* anchors, int coun
         const Vector2 delta = Sub(anchors[i], position_);
         const float distance = Length(delta);
         if (distance<30.0f || distance>PortalConfig::kReach) continue;
-        const float forward = Dot(delta, aimDir);
+        const float forward = PortalMath::Dot(delta, aimDir);
         if (forward <= 0.0f) continue;
         const float alignment = forward / distance;
         // 横ずれ距離：方向ベクトルに垂直な方向への投影量。
@@ -389,13 +389,13 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
 
             // 【停止/引っかかり防止】次の1Fで杭にどれだけ近づくかを予測。
             // 速度を反転してから解除するのでは遅いので、少し手前でロープを外す。
-            const float approach = Dot(nextVelocity, direction);
-            const float forward = Dot(toAnchor, nextVelocity);
+            const float approach = PortalMath::Dot(nextVelocity, direction);
+            const float forward = PortalMath::Dot(toAnchor, nextVelocity);
             const float releaseRadius = PortalConfig::kAutoLaunchDistance +
                 Clamp(approach * PortalConfig::kAutoLaunchLeadFrames,
                     0.0f, PortalConfig::kAutoLaunchMaxLead);
             // 点と1フレームの移動線分の最短距離（跨ぐケースも検知する）。
-            const float sweep = Clamp(forward / (Dot(nextVelocity, nextVelocity) + 0.0001f), 0.0f, 1.0f);
+            const float sweep = Clamp(forward / (PortalMath::Dot(nextVelocity, nextVelocity) + 0.0001f), 0.0f, 1.0f);
             const float sweptDistance = Length(Sub(toAnchor, Mul(nextVelocity, sweep)));
             const bool passedNearest = grappleAge_ > 2 &&
                 distance > grappleLastDistance_ + 0.5f;
@@ -496,7 +496,7 @@ PortalAttackKind PortalPlayer::HitTestEnemy(Vector2 target, float radius) const 
         elapsed <= PortalConfig::kSpinActiveEnd) {
         const Vector2 d = Sub(target, position_);
         const float hitRadius = radius + PortalConfig::kSpinRadius;
-        if (Dot(d, d) <= hitRadius * hitRadius) return PortalAttackKind::Spin;
+        if (PortalMath::Dot(d, d) <= hitRadius * hitRadius) return PortalAttackKind::Spin;
     }
     // 【通常攻撃の保証】触手表示のスロットが埋まっていてもJ入力から判定する。
     // ボスが大きくなっても攻撃しやすいよう、太い線分×円で判定。
@@ -507,19 +507,19 @@ PortalAttackKind PortalPlayer::HitTestEnemy(Vector2 target, float radius) const 
         const Vector2 segment = Mul(normalAttackDirection_, PortalConfig::kAttackReach);
         const Vector2 a = position_;
         const Vector2 delta = Sub(target, a);
-        const float t = Clamp(Dot(delta, segment) / (Dot(segment, segment) + 0.0001f), 0.0f, 1.0f);
+        const float t = Clamp(PortalMath::Dot(delta, segment) / (PortalMath::Dot(segment, segment) + 0.0001f), 0.0f, 1.0f);
         // Windowsのヘッダーではnearがマクロ定義されることがある。
         // そのため変数名をclosestOffsetにする（攻撃判定の計算は同じ）。
         const Vector2 closestOffset = Sub(delta, Mul(segment, t));
         const float r = radius + PortalConfig::kNormalAttackThickness;
-        if (Dot(closestOffset, closestOffset) <= r * r) return PortalAttackKind::Normal;
+        if (PortalMath::Dot(closestOffset, closestOffset) <= r * r) return PortalAttackKind::Normal;
     }
     // 【ボタン不要の軽い回転攻撃】グラップル中は近くの敵へ触手が当たる。
     // 強い空中スピンとは違い、低ダメージのGrapple判定。ボスの無敵時間も適用。
     if (IsGripping()) {
         const Vector2 d = Sub(target, position_);
         const float hitRadius = radius + PortalConfig::kGrappleSpinRadius;
-        if (Dot(d, d) <= hitRadius * hitRadius) return PortalAttackKind::Grapple;
+        if (PortalMath::Dot(d, d) <= hitRadius * hitRadius) return PortalAttackKind::Grapple;
     }
     // グラップル中は「移動用の綱＝攻撃中」の判定にする。
     for (const auto& gate : gates_) {
