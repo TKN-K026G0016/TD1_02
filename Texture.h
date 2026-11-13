@@ -40,6 +40,7 @@ enum class TextureType {
 	PlayerArm,
 
 	//Enemy
+	BossBodyForm1,
 
 	//MapChip
 	SampleMapChip,

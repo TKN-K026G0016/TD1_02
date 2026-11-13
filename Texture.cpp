@@ -34,6 +34,7 @@ void InitTexture(void) {
 		{ Novice::LoadTexture("./resources/texture/player/player_arm.png"), { 64, 64 }, {0}, 0, 0, WHITE },
 
 		//Enemy
+		{ Novice::LoadTexture("./resources/texture/boss/form1/boss.png"), { 256, 256 }, {0}, 0, 0, WHITE },
 
 		//MapChip
 		{ Novice::LoadTexture("./resources/texture/stage/mapchip.png"), { 32, 32 }, {0}, 0, 0, WHITE },
