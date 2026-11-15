@@ -24,6 +24,7 @@ void PortalPlayer::Initialize(Vector2 position) {
     armorPeelFrames_ = 0; armorPeelTarget_ = -1; armorPeelRequest_ = -1; armorTetherSlot_ = -1;
     armorPullFailFrames_ = 0; normalAttackFrames_ = 0; normalAttackDirection_ = { 1.0f,0.0f };
     spinFrames_ = 0; hurtFrames_ = 0; hitConfirmFrames_ = 0; hp_ = kMaxHp;
+    sourceKnockX_ = 0.0f; sourceKnockHold_ = 0; sourceAirDownUsed_ = false;
     jumpCutArmed_ = false;
     castPulse_ = landingBounce_ = gripStretch_ = bodyLean_ = 0.0f;
     for (auto& gate : gates_) gate = PortalTentacle{};
@@ -118,8 +119,8 @@ void PortalPlayer::OnArmorPeeled() {
 void PortalPlayer::StartSpin() {
     spinFrames_ = PortalConfig::kSpinFrames;
     // 落下しているときだけ少しブレーキ。完全な空中停止にはしない。
-    if (velocity_.y < -6.0f) velocity_.y = -6.0f;
-    velocity_.y += PortalConfig::kSpinLift;
+    // 元コード: 回転中は重力だけを35%にし、追加上昇は与えない。
+    // 既存のヒット判定と4π(2回転)演出は維持する。
     castPulse_ = 1.0f;
 }
 
@@ -267,13 +268,25 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
         const bool canGrip = !grappleRunning && attackIntentTarget_ >= 0 && anchors != nullptr &&
             attackIntentTarget_ < anchorCount &&
             Length(Sub(anchors[attackIntentTarget_], position_)) <= PortalConfig::kReach;
-        const bool willSpin = !canGrip && !grounded_ && coyoteFrames_ == 0;
+        // 元main.cppでは空中ニュートラル入力だけスピン、方向指定時は8方向攻撃。
+        // 右スティックで下攻撃を指定したときも、通常攻撃の反動を使える。
+        const bool willSpin = !canGrip && !grounded_ && coyoteFrames_ == 0 &&
+            !input.aimExplicit && std::fabs(input.move) < 0.08f;
         // ボスから離れていても、Jを押した時点で攻撃が開始する。
         // 触手の空きスロット不足は「攻撃不可」の理由にしない。
         const bool normalAttack = !canGrip && !willSpin;
         if (normalAttack) {
             normalAttackFrames_ = PortalConfig::kNormalAttackFrames;
             normalAttackDirection_ = aim_; // 入力した瞬間の方向で攻撃する
+            // 【元main.cppの下攻撃反動】空中で下/斜め下に触手を撃つと跳ね上がる。
+            // Y上向きのため、元の「-20」はここでは「+20」。
+            // 元のように着地まで1回だけ有効。通常/グラップル攻撃を阻害しない。
+            if (!grounded_ && aim_.y < -0.5f && !sourceAirDownUsed_) {
+                velocity_.y = PortalConfig::kSourceDownRecoil;
+                sourceKnockX_ = -PortalConfig::kSourceDownRecoilX * aim_.x;
+                sourceKnockHold_ = PortalConfig::kSourceKnockHoldFrames;
+                sourceAirDownUsed_ = true;
+            }
             cooldown_ = PortalConfig::kAttackCooldownFrames;
             attackBufferFrames_ = 0; attackIntentTarget_ = -1;
             castPulse_ = 1.0f;
@@ -358,7 +371,7 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
 
     // ジャンプはSPACEの短押し/長押しで高さを調整する。
     if (jumpCutArmed_ && !input.jumpHeld && velocity_.y > 0.0f) {
-        velocity_.y *= PortalConfig::kJumpReleaseMultiplier;
+        velocity_.y = std::fmin(velocity_.y, PortalConfig::kJumpSpeed * PortalConfig::kJumpReleaseMultiplier); // 元: 20→最大5
         jumpCutArmed_ = false;
     }
     if (velocity_.y <= 0.0f) jumpCutArmed_ = false;
@@ -382,10 +395,10 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
             const Vector2 direction = distance > 0.001f ? Mul(toAnchor, 1.0f / distance) : grappleTravelDirection_;
 
             // 近くで力を弱めない。引き寄せの速度は連続して変化する。
-            Vector2 nextVelocity = Add(Mul(velocity_, PortalConfig::kPullMomentumKeep),
-                Mul(direction, PortalConfig::kPullAcceleration));
-            nextVelocity.y -= PortalConfig::kGravity * 0.16f;
-            nextVelocity = Limit(nextVelocity, PortalConfig::kMaxPullSpeed);
+            // 【元main.cppグリップ】杭の方向へ一定速22px/Fで直線移動。
+            // 元のpull中は重力と移動入力を無視するため、ここでも無視する。
+            // ただし以前の引っ掛かり防止のため、杭直前の予測解除は残す。
+            Vector2 nextVelocity = Mul(direction, PortalConfig::kSourceGripPullSpeed);
 
             // 【停止/引っかかり防止】次の1Fで杭にどれだけ近づくかを予測。
             // 速度を反転してから解除するのでは遅いので、少し手前でロープを外す。
@@ -409,12 +422,10 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
                 // 【最重要】射出方向を新たに設定しない。
                 // 接近直前の速度をそのまま採用し、速さを1px/Fだけ足す。
                 // 旧実装の「固定x速度・上向き最低速度・接続方向への加算」を廃止。
-                Vector2 exitVelocity = nextVelocity;
+                // 【元main.cpp】ワイヤー解除時は26px/F。
+                // 通過直前の速度の向きを保持する（前の版の逆射出バグ防止）。
+                Vector2 exitVelocity = Mul(direction, PortalConfig::kSourceGripReleaseSpeed);
                 const float exitSpeed = Length(exitVelocity);
-                if (exitSpeed > 0.001f) {
-                    exitVelocity = Mul(exitVelocity,
-                        1.0f + PortalConfig::kGrappleExitSpeedBonus / exitSpeed);
-                }
                 if (exitSpeed < PortalConfig::kGrappleStallSpeed) {
                     // 予想外に低速になった場合のみ、小さい補助を同方向へ。
                     exitVelocity = Add(exitVelocity, Mul(grappleTravelDirection_,
@@ -441,30 +452,38 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
         }
     }
     if (!gripping && !justLaunched) {
-        const bool moving = std::fabs(input.move) > 0.08f;
+       // const bool moving = std::fabs(input.move) > 0.08f;
         if (!grounded_ && launchMomentumFrames_ > 0) {
-            // 【大事】従来は射出速度25→通常速度6.4へすぐ減速していた。
-            // この期間は横速度を保持し、A/Dで空中軌道を調整できる。
-            if (moving) {
-                // 【方向転換】逆入力は先に強いブレーキ。通常の加速より早く切り返せる。
-                // 高速射出後の長い逆走を防ぐ。速度の上限は従来通り制限。
-                const float turnAcceleration = velocity_.x * input.move < 0.0f
-                    ? PortalConfig::kLaunchAirReverseBrake : PortalConfig::kLaunchAirSteer;
-                velocity_.x = Clamp(velocity_.x + input.move * turnAcceleration,
-                    -PortalConfig::kLaunchAirMaxX, PortalConfig::kLaunchAirMaxX);
-            }
-            else {
-                velocity_.x *= PortalConfig::kLaunchMomentumDrag;
-            }
+            // 【元の反動方式へ】ワイヤー射出後は残りの横速度を短時間維持。
+            // 元コードの knockX と同じく0.92/Fで減衰し、A/Dは通常移動の入力。
+            // ※A/Dで「射出方向」を再決定しない。射出は杭へ向かう速さのまま。
+            velocity_.x = velocity_.x * PortalConfig::kLaunchMomentumDrag +
+                input.move * PortalConfig::kMoveSpeed * 0.08f;
         }
         else {
-            const float desired = input.move * PortalConfig::kMoveSpeed;
-            const float accel = grounded_ ?
-                (moving ? PortalConfig::kGroundAcceleration : PortalConfig::kGroundBrake) :
-                (moving ? PortalConfig::kAirAcceleration : PortalConfig::kAirBrake);
-            velocity_.x = Approach(velocity_.x, desired, accel);
+            // 【元プレイヤーの左右移動】A/D・左スティックは加速度なしで8px/F。
+            // 下斜め攻撃の横反動は別変数で合成するため、急に消えない。
+            float moveInput = input.move * PortalConfig::kMoveSpeed;
+            if (sourceKnockX_ != 0.0f) {
+                if (moveInput * sourceKnockX_ < 0.0f) {
+                    const float strength = Clamp(std::fabs(sourceKnockX_) /
+                        PortalConfig::kSourceDownRecoilX, 0.0f, 1.0f);
+                    moveInput *= 1.0f - strength * (1.0f - PortalConfig::kSourceKnockInputRate);
+                }
+                velocity_.x = moveInput + sourceKnockX_;
+                if (sourceKnockHold_ > 0) --sourceKnockHold_;
+                else {
+                    sourceKnockX_ *= PortalConfig::kSourceKnockFriction;
+                    if (std::fabs(sourceKnockX_) < 0.5f) sourceKnockX_ = 0.0f;
+                }
+            }
+            else velocity_.x = moveInput;
         }
-        velocity_.y = Clamp(velocity_.y - PortalConfig::kGravity, -18.0f, 27.0f);
+        // 元main.cpp: 回転中は重力35%、通常は重力0.8。
+        // Y軸が上向きなので下方向の加速度を「引く」。
+        const float gravityRate = spinFrames_ > 0 ? PortalConfig::kSourceSpinGravityRate : 1.0f;
+        velocity_.y = Clamp(velocity_.y - PortalConfig::kGravity * gravityRate,
+            -PortalConfig::kSourceMaxFallSpeed, PortalConfig::kJumpSpeed + 6.0f);
     }
 
     const bool wasGrounded = grounded_;
@@ -481,7 +500,11 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
     if (position_.x > 1262.0f) { position_.x = 1262.0f; velocity_.x = 0.0f; }
     if (!wasGrounded && grounded_ && impactVelocity < -4.0f)
         landingBounce_ = Clamp(-impactVelocity / 18.0f, 0.0f, 1.0f);
-    if (grounded_) launchMomentumFrames_ = 0;
+    if (grounded_) {
+        launchMomentumFrames_ = 0;
+        sourceAirDownUsed_ = false; // 元コード: 着地したら下攻撃の反動を再使用可能
+        if (sourceKnockHold_ <= 0) sourceKnockX_ = 0.0f;
+    }
     bodyLean_ += (Clamp(velocity_.x * 0.9f, -9.0f, 9.0f) - bodyLean_) * 0.2f;
     // 【低コスト演出】BOXの角度だけ変えて飛行方向を表す（追加描画ゼロ）。
     const float desiredTilt = grounded_ ? 0.0f : Clamp(-velocity_.x * 0.013f, -0.32f, 0.32f);

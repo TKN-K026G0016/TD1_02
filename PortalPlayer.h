@@ -82,6 +82,10 @@ private:
     int spinFrames_ = 0;          // 0なら回転攻撃していない
     int hurtFrames_ = 0;          // ダメージ後の無敵時間
     int hp_ = kMaxHp;
+    // 【元プレイヤー移植】下攻撃の反動は通常移動と分離して管理する。
+    float sourceKnockX_ = 0.0f; // 横反動の残量（A/Dで射出方向は変えない）
+    int sourceKnockHold_ = 0; // 元コードでは6F維持してから摩擦0.92
+    bool sourceAirDownUsed_ = false; // 着地まで下攻撃の上昇反動は1回だけ
     bool jumpCutArmed_ = false; // SPACEジャンプの長押し/短押しを反映
     bool grounded_ = false;
     float castPulse_ = 0.0f, landingBounce_ = 0.0f, gripStretch_ = 0.0f, bodyLean_ = 0.0f;

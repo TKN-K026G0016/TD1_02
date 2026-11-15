@@ -1,3 +1,6 @@
+// 【このファイルの役割】Boss_coptar.cpp — コプターの行動・外装・戦闘AI
+// 5種類の攻撃、4ネジ解除、墜落、連打スタン、第2段階、被弾、撃破を管理する。
+
 #include "Boss_coptar.h"
 #include "Camera.h"
 #include "PortalDraw.h"
@@ -15,11 +18,12 @@ namespace {
         return a < b ? (a + step > b ? b : a + step) : (a - step < b ? b : a - step);
     }
 }
-
+// オブジェクトを使い始めるときに値を初期状態へ戻す。リトライ時にも重要。
 void Boss::Initialize(Vector2 spawnPos) {
     homePosition_ = position_ = spawnPos;
     targetPosition_ = nullptr; // Stage::InitStageがあとからSetTargetで接続する
     hp_ = kMaxHp;
+    armorRebuilt_ = false; rebuildOnWake_ = false; mashCount_ = 0; armorFallVelocity_ = 0.0f;
     armorPlates_ = BossStage1::kArmorPlates;
     // 【初期化】毎回すべての外装ポイントを復元する。
     for (int i = 0;i < BossStage1::kArmorPlates;++i) {
@@ -44,7 +48,7 @@ void Boss::Initialize(Vector2 spawnPos) {
     visual_.Initialize(spawnPos, BossStage1::kFloorY);
     ChangeState(BossState::Idle);
 }
-
+// ボスが狙うプレイヤー位置の参照先を保存する。ポインタ先の寿命に注意。
 void Boss::SetTarget(const Vector2* playerPosition) { targetPosition_ = playerPosition; }
 // 【調整ポイント】外装の各取っ掛かりは本体に追従する。
 // ボスのX移動と一緒に動く。0=左/1=中央/2=右。
@@ -57,6 +61,7 @@ Vector2 Boss::GetArmorGripPoint(int plate) const {
     return { position_.x + battleSettings_.armorHooks[plate].x,
         position_.y + battleSettings_.armorHooks[plate].y };
 }
+// 外装の引っ張られ具合を演出値として反映する。
 void Boss::SetArmorStrain(int plate, float progress) {
     // ボスの外装そのものがねじれて張力を表す。新しい描画物は作らない。
     armorStrainPlate_ = IsArmorAttached(plate) ? plate : -1;
@@ -65,6 +70,7 @@ void Boss::SetArmorStrain(int plate, float progress) {
 
 // 【外装ネジ】四隅の1点を触手で掴めた瞬間にネジが外れる。
 // ネジを1つ外してもコアは出ない。4点すべて外してから外装がペロっとめくれる。
+// ネジの番号が有効ならそのネジを外す。全解除時は外装めくれを開始する。
 bool Boss::TryPeelArmor(int plate) {
     if (!IsArmorAttached(plate) || state_ == BossState::ArmorCurl || state_ == BossState::ArmorStun) return false;
     armorAttached_[plate] = false;
@@ -81,13 +87,13 @@ bool Boss::TryPeelArmor(int plate) {
     }
     return true;
 }
-
+// 復帰時の吹き飛ばしイベントを1回だけ外部へ渡す。
 bool Boss::ConsumeWakeBlast() {
     const bool result = wakeBlastPending_;
     wakeBlastPending_ = false;
     return result;
 }
-
+// プレイヤーの速度・着地・ワイヤー状態をAIの判断材料に保存する。
 void Boss::SetTargetMotion(Vector2 velocity, bool grounded, bool usingWire) {
     targetVelocity_ = velocity;
     targetGrounded_ = grounded;
@@ -100,11 +106,12 @@ void Boss::SetTargetMotion(Vector2 velocity, bool grounded, bool usingWire) {
         targetStillFrames_ = 0;
     }
 }
-
+// 距離、移動、空中、ワイヤー使用などから次の5技を評価して選択する。
 void Boss::ChooseAttack() {
     // 【重要】攻撃種類は従来の5種類のまま。
     // 毎回固定の並びにせず、プレイヤーの位置・動き・ワイヤー使用を採点する。
     // 直前と2回前の攻撃にはペナルティを付けて単調な繰り返しを防ぐ。
+    // 【注目】【攻撃選択】チュートリアル固定順が有効な場合だけ最初の5技を順に見せる。
     if (BossStage1::kScriptedTutorialFirstFive && attackCount_ < 5) {
         constexpr BossAttack order[5] = {
             BossAttack::Rush,BossAttack::Shot,BossAttack::Press,
@@ -117,6 +124,7 @@ void Boss::ChooseAttack() {
 
         const float moving = Abs(targetVelocity_.x);
         const bool airborne = !targetGrounded_;
+        // 【注目】【AIの採点表】0プレス・1射撃・2突進・3コマ・4ヨーヨーの優先度。
         float score[5] = {};
         // 0 Press 1 Shot 2 Rush 3 Top 4 YoYo
         score[0] = 16.0f + (dx < 245.0f ? 38.0f : 0.0f)
@@ -138,6 +146,7 @@ void Boss::ChooseAttack() {
         }
         const int prev = static_cast<int>(lastAttack_);
         const int older = static_cast<int>(previousAttack_);
+        // 【注目】【繰り返し防止】直前と2回前の技に点数ペナルティをかける。
         score[prev] -= BossStage1::kAIRepeatPenalty;
         score[older] -= BossStage1::kAIPreviousTwoPenalty;
         int best = 0;
@@ -162,10 +171,11 @@ void Boss::ChooseAttack() {
     lastAttack_ = nextAttack_;
     ++attackCount_;
 }
-
+// ボスの行動状態を切り替え、状態ごとの開始演出・タイマーを初期化する。
 void Boss::ChangeState(BossState next) {
     state_ = next;
     stateFrame_ = 0;
+    // 【注目】【状態別の開始処理】新状態になった瞬間に目標固定・弾消去・カメラ演出等を行う。
     switch (state_) {
     case BossState::Idle: visual_.SetMode(BossVfxMode::Idle); break;
     case BossState::Warning:
@@ -190,13 +200,28 @@ void Boss::ChangeState(BossState next) {
         break;
     case BossState::Recovery: visual_.SetMode(BossVfxMode::Recovery); break;
     case BossState::ArmorCurl:
+        // ネジ全解除で専用イベントへ移る。飛んでいた弾が連打を邪魔しないよう消す。
+        for (auto& b : bullets_)b.active = false;
+        toyReturning_ = true;
         visual_.SetMode(BossVfxMode::Recovery);
         ShakeCamera(6.0f, 8);
         break;
+    case BossState::ArmorFalling:
+        // 【墜落】外装4ネジ解除後、空中から地面へ落ちる。攻撃AIは停止。
+        armorFallVelocity_ = 0.0f;
+        visual_.SetMode(BossVfxMode::Recovery);
+        break;
+    case BossState::ArmorImpact:
+        // 【激突】機体が一瞬潰れる。追加パーティクルなしで画面揺れを強める。
+        visual_.OnImpact(position_);
+        ShakeCamera(11.0f, 14);
+        break;
     case BossState::ArmorStun:
+        mashCount_ = 0; // 毎回の連打タイムでリセット
         visual_.SetMode(BossVfxMode::Recovery);
         break;
     case BossState::WakeBlast:
+        if (rebuildOnWake_ && !armorRebuilt_) BeginArmorRebuild();
         visual_.SetMode(BossVfxMode::Warning);
         wakeBlastPending_ = true;
         ShakeCamera(8.0f, 13);
@@ -236,19 +261,52 @@ void Boss::ChangeState(BossState next) {
     }
 }
 
+// 【第2段階】HP50%以下になったタイミングで一度だけ外装とネジを復元。
+// 続けて衝撃を発生させるのは ChangeState(WakeBlast) の既存経路。
+// HP50%以下で1度だけ外装・ネジを復活させる。
+void Boss::BeginArmorRebuild() {
+    armorRebuilt_ = true;
+    rebuildOnWake_ = false;
+    armorPlates_ = BossStage1::kArmorPlates;
+    for (int i = 0;i < BossStage1::kArmorPlates;++i) {
+        armorAttached_[i] = true;
+        peeledFrames_[i] = 0;
+    }
+    armorStrainPlate_ = -1; armorStrain_ = 0.0f;
+    hitCooldown_ = 0;
+}
+
+// 【連打専用】左で移動・右スティックをニュートラル→倒す、を1HITとして受付。
+// 接近判定をなくしているのは、カメラ演出中の攻撃が届かない事故を防ぐため。
+// スタン中のスティック弾き直し等を1回の連打として数え、コアHPを減らす。
+bool Boss::RegisterMashHit() {
+    if (state_ != BossState::ArmorStun || IsDefeated()) return false;
+    ++mashCount_;
+    const int bonus = (mashCount_ / BossStage1::kMashBonusEvery);
+    hp_ -= BossStage1::kMashDamage + bonus;
+    hitstop_ = 0; // 連打の受付を止めない。ボスの外見・画面揺れだけでヒット感を表す。
+    ShakeCamera(2.0f + static_cast<float>(mashCount_ > 12 ? 12 : mashCount_) * 0.16f,
+        BossStage1::kMashHitShakeFrames);
+    if (hp_ <= 0) { hp_ = 0; ChangeState(BossState::Defeated); }
+    else if (hp_ <= kMaxHp / 2 && !armorRebuilt_) {
+        rebuildOnWake_ = true;
+        ChangeState(BossState::WakeBlast);
+    }
+    return true;
+}
+// プレス攻撃の内部段階（接近・溜め・落下など）を切り替える。
 void Boss::ChangePressPhase(PressPhase next) {
     pressPhase_ = next;
     pressFrame_ = 0;
     if (next == PressPhase::Dive) pressFallSpeed_ = 3.0f;
     if (next == PressPhase::Return) pressReturnStart_ = position_;
 }
-
 bool Boss::IsWeakPointOpen() const {
     return IsCoreExposed() &&
         (state_ == BossState::ArmorStun || state_ == BossState::Dizzy ||
             (state_ == BossState::Press && pressPhase_ == PressPhase::Stun));
 }
-
+// 突進中にワイヤーが使われたか記録し、空振り後の失速判断に使う。
 void Boss::NoteWireMotion(bool usingWire) {
     // 【安全な判定】予兆または突進中にワイヤーが接続/自動射出されたか記録。
     // 動かずに普通に避けた場合は専用の長い失速は発生しない。
@@ -257,7 +315,7 @@ void Boss::NoteWireMotion(bool usingWire) {
         wireUsedDuringRush_ = true;
     }
 }
-
+// 攻撃種と現在の外装・スタン状態を考慮してHPや演出を更新する。
 bool Boss::TakeDamage(int amount, bool isGrappleHit, bool isSpinHit, bool fromWireLaunch) {
     if (IsDefeated() || state_ == BossState::ArmorCurl || amount <= 0 || hitCooldown_ > 0) return false;
     hitCooldown_ = BossStage1::kNormalHitCooldown;
@@ -298,11 +356,15 @@ bool Boss::TakeDamage(int amount, bool isGrappleHit, bool isSpinHit, bool fromWi
     hp_ -= amount;
     visual_.OnMuzzleFlash(position_);
     if (hp_ <= 0) { hp_ = 0;ChangeState(BossState::Defeated); }
+    else if (hp_ <= kMaxHp / 2 && !armorRebuilt_) {
+        // 通常攻撃でHP半分を跨いだときも第2段階へ（連打以外のルートを塞がない）。
+        rebuildOnWake_ = true;
+        ChangeState(BossState::WakeBlast);
+    }
     else if (amount >= 14) { hitstop_ = 2;ShakeCamera(2.0f, 4); }
     applyCounter();
     return true;
 }
-
 void Boss::UpdatePress() {
     ++pressFrame_;
     switch (pressPhase_) {
@@ -359,7 +421,6 @@ void Boss::UpdatePress() {
     }
     }
 }
-
 void Boss::Shoot(int spreadIndex) {
     Bullet& b = bullets_[nextBulletIndex_];
     nextBulletIndex_ = (nextBulletIndex_ + 1) % kMaxBullets;
@@ -378,7 +439,6 @@ void Boss::Shoot(int spreadIndex) {
     else b.velocity = { -speed,0.0f };
     visual_.OnMuzzleFlash(b.position);
 }
-
 void Boss::UpdateToy() {
     if (nextAttack_ == BossAttack::Top) {
         // 【コマ】低空を回転しながら滑り、壁で跳ね返る。
@@ -421,7 +481,6 @@ void Boss::UpdateToy() {
         battleSettings_.yoyoDuration : battleSettings_.topDuration;
     if (stateFrame_ >= duration) ChangeState(BossState::Idle);
 }
-
 void Boss::UpdateBullets() {
     for (auto& b : bullets_) if (b.active) {
         b.position.x += b.velocity.x;
@@ -431,9 +490,12 @@ void Boss::UpdateBullets() {
         if (--b.life <= 0 || b.position.y < BossStage1::kFloorY - 30.0f) b.active = false;
     }
 }
-
+// ボスの攻撃とプレイヤーの距離や重なりを調べ、ダメージ量を返す。
 int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitSource) {
-    if (IsDefeated()) return 0;
+    // 墜落から連打のあいだは無防備なボス。攻撃判定を完全に止める。
+    if (IsDefeated() || state_ == BossState::ArmorCurl ||
+        state_ == BossState::ArmorFalling || state_ == BossState::ArmorImpact ||
+        state_ == BossState::ArmorStun) return 0;
     for (auto& b : bullets_) if (b.active) {
         const float r = playerRadius + 10.0f;
         if (Dist2(playerPosition, b.position) <= r * r) {
@@ -462,7 +524,6 @@ int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitS
     }
     return 0;
 }
-
 void Boss::Update() {
     if (hitCooldown_ > 0) --hitCooldown_;
     if (spinCounterCooldown_ > 0) --spinCounterCooldown_;
@@ -484,6 +545,7 @@ void Boss::Update() {
         return;
     }
     ++stateFrame_;
+    // 【注目】【状態別の開始処理】新状態になった瞬間に目標固定・弾消去・カメラ演出等を行う。
     switch (state_) {
     case BossState::Idle:
         // 【直した原因③】射撃で横へノックバックした後、そのまま位置がズレ続けていた。
@@ -577,17 +639,38 @@ void Boss::Update() {
         }
         break;
     case BossState::ArmorCurl:
-        // 【めくれ】新しい粒子を出さず、外装BOXの回転で「ペロッ」を表現。
-        if (stateFrame_ >= BossStage1::kArmorCurlFrames) ChangeState(BossState::ArmorStun);
+        // 【めくれ】既存BOXの回転だけ。完了したらその場で墜落を開始。
+        if (stateFrame_ >= BossStage1::kArmorCurlFrames) ChangeState(BossState::ArmorFalling);
+        break;
+    case BossState::ArmorFalling:
+        // 【Y上向き】重力で下向き加速。床Y+機体半径で着地させる。
+        armorFallVelocity_ -= BossStage1::kArmorFallGravity;
+        if (armorFallVelocity_ < -BossStage1::kArmorFallMaxSpeed)
+            armorFallVelocity_ = -BossStage1::kArmorFallMaxSpeed;
+        position_.y += armorFallVelocity_;
+        if (position_.y <= BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f) {
+            position_.y = BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f;
+            ChangeState(BossState::ArmorImpact);
+        }
+        break;
+    case BossState::ArmorImpact:
+        if (stateFrame_ >= BossStage1::kArmorImpactFrames)ChangeState(BossState::ArmorStun);
         break;
     case BossState::ArmorStun:
         // 【叩き放題】長い反撃時間。HPが0になれば吹き飛ばしを出さず撃破。
-        if (stateFrame_ >= BossStage1::kArmorStunFrames) ChangeState(BossState::WakeBlast);
+        if (stateFrame_ >= BossStage1::kMashTimeFrames) {
+            // 時間切れでもプレイヤーを吹き飛ばす。HP半分は一度しか復活しない。
+            rebuildOnWake_ = !armorRebuilt_ && hp_ <= kMaxHp / 2;
+            ChangeState(BossState::WakeBlast);
+        }
         break;
     case BossState::WakeBlast:
         // 【復帰】ここに入ったフレームだけStageへ衝撃イベントを通知。
         // その後ボスは高い定位置に戻って元の5技AIを再開する。
-        if (stateFrame_ >= BossStage1::kArmorWakeFrames) ChangeState(BossState::Idle);
+        if (stateFrame_ >= BossStage1::kArmorWakeFrames) {
+            // 地面から上へ戻してから通常AI復帰。以後の上昇もIdleの既存処理に任せる。
+            ChangeState(BossState::Idle);
+        }
         break;
     case BossState::Dizzy:
         // 【反撃猶予】ワイヤーで突進をかわした直後の隙。
@@ -618,7 +701,7 @@ void Boss::Update() {
     UpdateBullets();
     visual_.Update(position_);
 }
-
+// 現在の状態を画面に表示する。基本的にゲームの座標やHPは変えない。
 void Boss::Draw() const {
     // 【技が見て分かる予兆】種類を増やさず、各攻撃で異なる警告図形を1～2個だけ表示。
     // 大量パーティクルは使わない。攻撃開始後は予兆を消して判定と対応させる。
@@ -650,6 +733,11 @@ void Boss::Draw() const {
     }
     visual_.DrawBehind(position_);
     visual_.DrawBody(position_);
+    // 【連打演出】本体の白BOXを再利用。色を重ねるだけで追加描画は最大1BOX。
+    // 256x256の元サイズは変えず、連打で一瞬赤く点滅する。
+    if (state_ == BossState::ArmorStun && mashCount_ > 0 && stateFrame_ % 6 < 2) {
+        PortalDraw::Box(position_, 256.0f, 256.0f, 0xFF45664B);
+    }
     // 【外装シート】256x256の本体1倍はそのまま。上に薄い外装BOXを1枚重ねる。
     // ネジ4つを外すと、板が下端を支点に回転してペロッとめくれる。
     if (armorPlates_ > 0 || state_ == BossState::ArmorCurl) {
@@ -682,7 +770,7 @@ void Boss::Draw() const {
             PortalDraw::RotatedBox(p, 24.0f, 10.0f, t * 0.22f + (i - 1) * 0.3f, 0xE7E5DDFF);
         }
     }
-    if (state_ == BossState::Dizzy || state_ == BossState::ArmorStun) {
+    if (state_ == BossState::Dizzy || state_ == BossState::ArmorStun || state_ == BossState::ArmorImpact) {
         // 回避成功の合図：本体の上に黄色BOXを1枚。新規パーティクル不要。
         PortalDraw::Box({ position_.x,position_.y + 53.0f }, 49.0f, 7.0f, 0xFFEA73FF);
     }

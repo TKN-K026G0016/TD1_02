@@ -9,20 +9,31 @@ namespace PortalConfig {
 	constexpr float kWorldCeiling = 575.0f; // 【固定画面】画面上へ抜けない高さ（ジャンプは維持）
 
 	// 【移動】地上ではキビキビ、空中では速度を残して方向修正可能。
-	constexpr float kMoveSpeed = 6.4f;
+	constexpr float kMoveSpeed = 8.0f; // 元main.cpp: kPlayerSpeed。地上/空中とも基本8px/F
 	constexpr float kGroundAcceleration = 1.40f;
 	constexpr float kGroundBrake = 1.85f;
 	constexpr float kAirAcceleration = 0.78f;
-		constexpr float kAirBrake = 0.16f;
-		// 【録画のような慣性】ワイヤー射出直後は横速度をすぐ通常走行速度に戻さない。
-		constexpr int kLaunchMomentumFrames = 8; // 【慣性】射出後の勢いを保つフレーム。大きいほど滑る
-	constexpr float kLaunchMomentumDrag = 0.7f; // 【慣性】ニュートラル時の減速率。小さいほど止まりやすい
-	constexpr float kLaunchAirSteer = 2.5f; // 【操作感】射出後、同じ方向へ加速する強さ
+	constexpr float kAirBrake = 0.16f;
+	// 【録画のような慣性】ワイヤー射出直後は横速度をすぐ通常走行速度に戻さない。
+	constexpr int kLaunchMomentumFrames = 14; // 【慣性】射出後の勢いを保つフレーム。大きいほど滑る
+	constexpr float kLaunchMomentumDrag = 0.92f; // 【慣性】ニュートラル時の減速率。小さいほど止まりやすい
+	constexpr float kLaunchAirSteer = 1.15f; // 【操作感】射出後、同じ方向へ加速する強さ
 	constexpr float kLaunchAirReverseBrake = 2.6f; // 【操作感】逆方向入力で素早くブレーキ・切り返し
 	constexpr float kLaunchAirMaxX = 24.0f; // 射出中の横速度上限
-	constexpr float kGravity = 0.58f;
-	constexpr float kJumpSpeed = 17.8f; // 【ジャンプの高さ】↑で高くなる。SPACE単独でジャンプ
-	constexpr float kJumpReleaseMultiplier = 0.94f; // 【短押しと長押しの差】0.94=短押しでも高め
+	constexpr float kGravity = 0.8f; // 元main.cpp: kGravity。上向きYなので速度から引く
+	// 元main.cpp「プレイヤーの動き.zip」から移植する挙動の調整値
+	constexpr float kSourceMaxFallSpeed = 24.0f; // 終端落下速度（Y上向きなので下限は-24）
+	constexpr float kSourceDownRecoil = 20.0f; // 空中で下向きに撃ったときの上昇反動
+	constexpr float kSourceDownRecoilX = 26.0f; // 斜め下攻撃の横反動（攻撃と反対方向）
+	constexpr int kSourceKnockHoldFrames = 6; // 最初の6Fは横反動を維持
+	constexpr float kSourceKnockFriction = 0.92f; // 反動が毎F減る割合
+	constexpr float kSourceKnockInputRate = 0.25f; // 反動と逆入力時に移動入力を弱める率
+	constexpr float kSourceSpinGravityRate = 0.35f; // 空中回転攻撃中の重力
+	constexpr float kSourceGripPullSpeed = 22.0f; // グラップル直線巻き取り（Y上向き）
+	constexpr float kSourceGripReleaseSpeed = 26.0f; // ワイヤー射出速度
+
+	constexpr float kJumpSpeed = 20.0f; // 【ジャンプの高さ】↑で高くなる。SPACE単独でジャンプ
+	constexpr float kJumpReleaseMultiplier = 0.25f; // 元: 上昇速度20→5。上向きYで同じ // 【短押しと長押しの差】0.94=短押しでも高め
 	constexpr int kJumpBufferFrames = 8;  // 【先行入力】着地前にSPACEを押してもジャンプ予約
 	constexpr int kCoyoteFrames = 7;      // 足場を離れた直後もジャンプ可能
 
@@ -62,7 +73,7 @@ namespace PortalConfig {
 	constexpr float kAnchorNearbyRadius = 105.0f; // 旧設定：誤グラップル防止のため現在は使用しない
 	constexpr float kAnchorAimWeight = 230.0f;   // 旧設定：選択処理では現在使用しない
 	constexpr float kPullAcceleration = 2.55f; // 自動巻き取りの加速
-	constexpr float kMaxPullSpeed = 24.0f; // 最大巻き取り速度
+	constexpr float kMaxPullSpeed = 22.0f; // 元: kGripPullSpeed。接続後は一定速で引き寄せ // 最大巻き取り速度
 	// 【自動射出】杭までこの距離に近づいたら、止まらずワイヤーを外して飛ぶ。
 	// 【引っ掛かり対策】杭を目前にして減速する前に、通過速度を見て自動射出する。
 	constexpr float kAutoLaunchDistance = 89.0f; // 基本の離脱距離
@@ -73,7 +84,7 @@ namespace PortalConfig {
 	constexpr int kGrappleMinFrames = 4; // 接続直後に誤解除しない最低フレーム数
 	constexpr float kGrappleReleaseForwardDot = 0.05f; // 進行方向への投影が正の場合に通過判定
 	constexpr float kGrappleExitSpeedBonus = 1.0f; // 【射出の爽快感】現在速度と同じ方向へ加算する1px/F
-	constexpr float kGrappleExitMaxSpeed = 25.0f; // 【固定画面】射出速度の上限。方向は変更しない
+	constexpr float kGrappleExitMaxSpeed = 26.0f; // 元: kGripLaunchSpeed // 【固定画面】射出速度の上限。方向は変更しない
 	constexpr float kGrappleStallSpeed = 5.5f; // 遅すぎる時だけ元の接続方向へ最低限進ませる
 	constexpr float kGrappleStallImpulse = 2.0f; // 低速救済。高速時には一切加算しない
 	// 旧kLaunchSpeed/kLaunchUpBoost/kLaunchMinUpSpeedは互換のため残しているが、
@@ -92,7 +103,7 @@ namespace PortalConfig {
 	constexpr float kOneButtonJumpAimY = 0.65f; // 旧設定：上＋Jジャンプは廃止（互換のため保持）
 	constexpr float kGripSwingAcceleration = 0.27f;
 	constexpr float kDownAttackBoost = 11.5f;
-	constexpr int kAttackCooldownFrames = 7; // Jの連打が効くまでの時間（攻撃だけは短め）
+	constexpr int kAttackCooldownFrames = 12; // Jの連打が効くまでの時間（攻撃だけは短め）
 	constexpr int kAttackBufferFrames = 7;
 	constexpr int kTentacleExtendFrames = 4; // 触手の接続応答速度（フレーム）
 	constexpr int kTentacleRetractFrames = 9;
@@ -112,11 +123,11 @@ namespace PortalConfig {
 	constexpr int kArmorPeelWindupFrames = kArmorPullSweetStart; // 以前の設定名との互換
 
 	// 【空中スピン攻撃】J押下、かつ杭を狙っていないとき発動。
-	constexpr int kSpinFrames = 23;
+	constexpr int kSpinFrames = 30; // 元: 空中回転攻撃は30F
 	constexpr int kSpinActiveStart = 3;
-	constexpr int kSpinActiveEnd = 19;
+	constexpr int kSpinActiveEnd = 27;
 	constexpr float kSpinRadius = 90.0f;
-	constexpr float kSpinLift = 1.8f;      // 発動時の落下ブレーキ
+	constexpr float kSpinLift = 1.8f;      // 旧設定: 元コードのスピンでは未使用
 	// 【ヒットの手応え】追加の粒子を出さず、既存BOXの色/傾き・ボスの硬直で表現。
 	constexpr int kHitConfirmFrames = 7; // 命中後、プレイヤーの色が変わるフレーム数
 	constexpr int kHitPoseHoldFrames = 3; // 触手アニメーションの時間だけを短く止める（移動は止めない）
