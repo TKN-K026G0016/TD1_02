@@ -1,3 +1,11 @@
+// ============================================================================
+// 【このファイルの役割】Scene_Manager.cpp — 画面遷移の管理
+// タイトル・プレイ・ポーズなど現在のシーンを決め、更新・描画を振り分ける。
+// 【読むコツ】①公開関数/定数 → ②初期化 → ③Update → ④Draw の順に追う。
+// 【座標の基本】このボス戦のワールド座標は右が+X、上が+Y。画面描画時に変換。
+// 【編集の約束】今回は元の計算・条件式は変えず、説明コメントを追加。
+// ============================================================================
+
 #include "Scene_Manager.h"
 #include "Texture.h"
 #include "Tool.h"
@@ -62,18 +70,28 @@ int alphaMax = 255;
 int alphaMin = 0;
 
 //フェードアウト完了後の待機時間
-Timer waitChangeSceneTimer{60};
+Timer waitChangeSceneTimer{ 60 };
 
 #pragma endregion
 
 #pragma region 関数: フェード関係
 
+// ------------------------------------------------------------------------
+// 【関数】GetTextureFadePanel()
+//  現在の状態や計算結果を返すための問い合わせ関数。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 static void GetTextureFadePanel(void) {
 	if (fadePanelTexture.tHandle == -1) {
 		fadePanelTexture = GetTexture(TextureType::White1x1);
 	}
 }
 
+// ------------------------------------------------------------------------
+// 【関数】MoveFadePanel()
+//  この関数が担当する処理を以下の順番で実行する。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 static void MoveFadePanel(void) {
 	switch (fadePanel.nowFadeMode) {
 	case ModeFade::FadeOut:
@@ -136,6 +154,11 @@ static void MoveFadePanel(void) {
 	}
 }
 
+// ------------------------------------------------------------------------
+// 【関数】DrawFadePanel()
+//  今ある内部状態を描画へ反映する。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 static void DrawFadePanel(void) {
 	if (fadePanel.nowFadeMode == ModeFade::Standby) {
 		return;
@@ -149,12 +172,22 @@ static void DrawFadePanel(void) {
 
 #pragma endregion
 
+// ------------------------------------------------------------------------
+// 【関数】InitScene()
+//  画面遷移の管理を初期化する。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void InitScene(void) {
 	GetTextureFadePanel();
 
 	InitFuncs[ToInt(nowScene)]();
 }
 
+// ------------------------------------------------------------------------
+// 【関数】UpdateScene()
+//  現在のシーンの更新関数を呼ぶ。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void UpdateScene(void) {
 	//フェード
 	MoveFadePanel();
@@ -162,11 +195,17 @@ void UpdateScene(void) {
 	UpdateFuncs[ToInt(nowScene)]();
 }
 
+// ------------------------------------------------------------------------
+// 【関数】DrawScene()
+//  現在のシーンの描画関数を呼ぶ。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void DrawScene(void) {
 	if (nowScene == Scene::Pause) {
 		DrawPlay();
 		DrawPause();
-	} else {
+	}
+	else {
 		DrawFuncs[ToInt(nowScene)]();
 	}
 
@@ -174,6 +213,11 @@ void DrawScene(void) {
 	DrawFadePanel();
 }
 
+// ------------------------------------------------------------------------
+// 【関数】ChangeScene()
+//  別シーンへの切替要求を出す。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void ChangeScene(Scene nextScene) {
 	nowScene = nextScene;
 
@@ -184,6 +228,11 @@ void ChangeScene(Scene nextScene) {
 /// 初期化処理なしのシーン変更(Pause→Playなどに)
 /// </summary>
 /// <param name="nextScene"></param>
+// ------------------------------------------------------------------------
+// 【関数】ChangeSceneImmediate()
+//  フェードを待たずシーンを変更する。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void ChangeSceneImmediate(Scene nextScene) {
 	nowScene = nextScene;
 }
@@ -192,6 +241,11 @@ void ChangeSceneImmediate(Scene nextScene) {
 /// 現在のフェード状態を取得
 /// </summary>
 /// <returns></returns>
+// ------------------------------------------------------------------------
+// 【関数】GetNowModeFade()
+//  現在の状態や計算結果を返すための問い合わせ関数。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 ModeFade GetNowModeFade(void) {
 	return fadePanel.nowFadeMode;
 }
@@ -200,6 +254,11 @@ ModeFade GetNowModeFade(void) {
 /// 現在のフェード状態を変更
 /// </summary>
 /// <returns></returns>
+// ------------------------------------------------------------------------
+// 【関数】ChangeModeFade()
+//  渡された値を内部の状態へ反映するための関数。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void ChangeModeFade(ModeFade mode) {
 	fadePanel.nowFadeMode = mode;
 }
@@ -208,6 +267,11 @@ void ChangeModeFade(ModeFade mode) {
 /// フェードアウト後のシーンを変更
 /// </summary>
 /// <param name="target"></param>
+// ------------------------------------------------------------------------
+// 【関数】ChangeFadeTarget()
+// 何をする？ 渡された値を内部の状態へ反映するための関数。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void ChangeFadeTarget(FadeTarget target) {
 	fadePanel.fadeTarget = target;
 }

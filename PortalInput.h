@@ -5,6 +5,7 @@ struct PortalCommands {
     Vector2 aim = {};
     bool aimExplicit = false; // 矢印キー/W・S/右スティックで意識して照準したか。A/D移動だけならfalse
     bool attack = false;      // パッド右スティックの倒し始め/8方向切替/自動連撃、またはキーボードJ
+    bool mashTap = false; // 【連打専用】J押し直し／右スティックの弾き直し。長押し自動連撃は含めない。
     bool attackHeld = false;  // 右スティックを倒している間 / キーボードJを押している間
     bool stickAction = false; // コントローラー右スティックでアクション中。短い入力は攻撃、ロック保持でグラップル
     bool jump = false;        // 左スティック上 / パッドA / キーボードSPACEの押し始め

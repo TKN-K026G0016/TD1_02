@@ -15,3 +15,6 @@ void SetCameraFollowY(float playerWorldY);
 
 // 一瞬だけズームして、部位破壊や大技の重みを出す（追加描画ゼロ）。
 void PunchCamera(float zoomAmount, int frames);
+
+// 【スタン連打演出】倍率と注視点だけ変える。追加描画なし。通常は自動で1倍へ復帰。
+void SetBossMashCamera(bool enabled, float bossX, float bossY);

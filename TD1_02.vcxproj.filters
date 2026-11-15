@@ -134,6 +134,9 @@
     <ClCompile Include="PortalTentacle.cpp">
       <Filter>Player</Filter>
     </ClCompile>
+    <ClCompile Include="MovingPlatform.cpp">
+      <Filter>Map</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="C:\KamataEngine\DirectXGame\audio\Audio.h">
@@ -295,6 +298,9 @@
     </ClInclude>
     <ClInclude Include="PortalTentacle.h">
       <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="MovingPlatform.h">
+      <Filter>Map</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

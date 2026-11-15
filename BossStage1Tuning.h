@@ -11,7 +11,7 @@ namespace BossStage1 {
 	constexpr float kBossHitRadius = 118.0f;
 	constexpr float kArmorHookSpacing = 43.0f;
 	constexpr float kArmorHookHeight = 48.0f;
-	constexpr int kMaxHp = 500;                  // 外装が剥がれた後のコアHP
+	constexpr int kMaxHp = 190;                  // 外装が剥がれた後のコアHP
 	constexpr int kArmorPlates = 4;              // 外装の枚数
 	constexpr int kArmorHitsPerPlate = 2;        // 通常攻撃による外装の揺れ周期（剥がすのはフック攻撃のみ）
 	constexpr int kGripArmorDamage = 2;          // 旧版互換値：外装は専用のフック攻撃で剥がす
@@ -27,7 +27,18 @@ namespace BossStage1 {
 	constexpr int kArmorCurlFrames = 38;
 	constexpr int kArmorStunFrames = 210;
 	constexpr int kArmorWakeFrames = 35;
-	constexpr float kWakeBlastRadius = 700.0f;
+	// 【新：墜落→連打→第2段階】この4項目でイベントのテンポを調整。
+	constexpr float kArmorFallGravity = 1.65f;       // 墜落中の重力（Y上向きなので減算）
+	constexpr float kArmorFallMaxSpeed = 28.0f;      // 墜落の最高速度
+	constexpr int kArmorImpactFrames = 18;           // 着地の一瞬の溜め（ヒットストップ）
+	constexpr int kMashTimeFrames = 240;             // 連打可能な時間（60FPSで4秒）
+	constexpr int kMashDamage = 5;                   // スティックの弾き直し1回の基礎ダメージ
+	constexpr int kMashBonusEvery = 5;              // この回数ごとに追加ダメージ
+	constexpr float kMashCameraZoom = 1.28f;        // 連打タイム限定のカメラ倍率。通常は1倍
+	constexpr float kMashCameraLerp = 0.12f;        // ズーム・寄りのなめらかさ
+	constexpr int kMashHitShakeFrames = 3;          // 連打ヒット時のカメラ揺れ
+
+	constexpr float kWakeBlastRadius = 2000.0f; // 復帰の吹き飛ばしは画面内全域。距離で不発にしない。
 	constexpr float kWakeBlastPushX = 13.0f;
 	constexpr float kWakeBlastPushDown = 18.0f;        // 破壊時の停止フレーム（ボスだけ）
 	constexpr int kImpactHitstop = 4;            // プレス接地の停止フレーム

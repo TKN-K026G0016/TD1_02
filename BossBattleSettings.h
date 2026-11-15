@@ -1,3 +1,7 @@
+// 【このファイルの役割】BossBattleSettings.h — エディターとゲームをつなぐ設定データ
+// ボス位置、杭、ネジ、攻撃パラメータ等をテキストで保存・読み込みする。
+// ============================================================================
+
 #pragma once
 // ================================================================
 // エディターとゲームの両方が使う設定データ。
@@ -37,7 +41,7 @@ struct BossBattleSettings {
     float yoyoRange = 490.0f;
     int yoyoDuration = 98, toyWarning = 34;
     int idleFrames = 30;
-
+    // 設定値が想定範囲内か確認する。壊れた設定を採用しないための判定。
     bool Valid() const {
         const auto inside = [](BattlePoint p) {
             return std::isfinite(p.x) && std::isfinite(p.y) && p.x >= 30.0f && p.x <= 1250.0f && p.y >= 70.0f && p.y <= 680.0f;
@@ -64,7 +68,7 @@ struct BossBattleSettings {
             yoyoDuration >= 30 && yoyoDuration <= 300 && toyWarning >= 8 && toyWarning <= 180 &&
             idleFrames >= 8 && idleFrames <= 180;
     }
-
+    // エディター設定をファイルへ保存する。
     bool Save(const char* path = kFilename) const {
         if (!Valid())return false;
         std::ofstream out(path, std::ios::trunc);
@@ -85,6 +89,7 @@ struct BossBattleSettings {
     }
 
     // 失敗しても以前の設定を壊さない。欠落/古い形式/異常値は読み込まない。
+// エディター設定をファイルから読み込む。失敗時は元の設定を守る。
     bool Load(const char* path = kFilename) {
         std::ifstream in(path);
         BossBattleSettings next;

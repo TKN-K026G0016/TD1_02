@@ -42,6 +42,7 @@ PortalCommands PortalInput::Read() {
 
     bool rightActive = false;
     bool rightPulse = false;
+    bool rightMashTap = false;
     if (out.connected) {
         int lx = 0, ly = 0, rx = 0, ry = 0;
         Novice::GetAnalogInputLeft(0, &lx, &ly);
@@ -68,6 +69,7 @@ PortalCommands PortalInput::Read() {
             if (!previousRightHeld_) {
                 rightHoldFrames_ = 0;
                 rightPulse = true;
+                rightMashTap = true; // 中立→倒し始めた瞬間のみ1HIT
             }
             else {
                 ++rightHoldFrames_;
@@ -94,6 +96,7 @@ PortalCommands PortalInput::Read() {
     if (!out.stickAction && Length(out.aim) > 0.05f) out.aim = EightDirections(out.aim);
     // プレイヤーへ渡す1Fの攻撃パルス。右スティックではボタン不要。
     out.attack = (attack && !previousAttack_) || rightPulse;
+    out.mashTap = (attack && !previousAttack_) || rightMashTap;
     out.attackHeld = attack || rightActive;
     out.jump = jump && !previousJump_;
     out.jumpHeld = jump;

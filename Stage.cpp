@@ -1,3 +1,11 @@
+// ============================================================================
+// 【このファイルの役割】Stage.cpp — ボス戦の司令塔
+// PortalArena(プレイヤー)とBoss(敵)をつなぐ。ネジ解除、ダメージ、カメラ、クリア判定、描画順を決める。
+// 【読むコツ】①公開関数/定数 → ②初期化 → ③Update → ④Draw の順に追う。
+// 【座標の基本】このボス戦のワールド座標は右が+X、上が+Y。画面描画時に変換。
+// 【編集の約束】今回は元の計算・条件式は変えず、説明コメントを追加。
+// ============================================================================
+
 #include "Stage.h"
 #include "Boss_coptar.h"
 #include "PortalArena.h"
@@ -10,7 +18,7 @@
 
 // ================================================================
 // 【第1ステージ】「突進の予兆→ワイヤー回避→失速時に反撃→外装/コアを破壊」。
-// 操作はJひとつ。AIはBoss、プレイヤーはPortalArenaが管理。
+// 現在は左スティックで移動、右スティックで8方向触手攻撃。Jはキーボード用。AIはBoss、プレイヤーはPortalArenaが管理。
 // 画面の派手さは運動/停止/画面揺れを使い、オブジェクト描画は最小限。
 // ================================================================
 static Boss boss;
@@ -23,20 +31,34 @@ static int tutorialFrame = 0;
 static int clearDelayFrames = 0; // ボス撃破後、短い倒れる演出のあとクリア
 static constexpr Vector2 kGravityScale = { 0.0f,-1.2f };
 
+// ------------------------------------------------------------------------
+// 【関数】InitStage()
+// 何をする？ ボス戦の設定読込、プレイヤー・ボス初期化、カメラ位置を整える。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void InitStage(void) {
     // 設定ファイルが無い場合は前回正常に読めた値／初期値で続行。
+    // 【注目】【設定読込】エディターの設定が無い場合は既定値を使う。
     liveBattleConfig.Load();
+    // 【注目】【プレイヤー初期化】ボスより先に初期化して、プレイヤー位置への参照を有効にする。
     arena.Initialize();
     arena.SetBattleSettings(liveBattleConfig);
     boss.SetBattleSettings(liveBattleConfig);
     boss.Initialize({ liveBattleConfig.bossSpawn.x,liveBattleConfig.bossSpawn.y });
+    // 【注目】【重要：ポインタ】毎フレーム変わるプレイヤーの位置をボスAIへ渡す。
     boss.SetTarget(&arena.GetPlayerPosition());
     stageCleared = false;
     tutorialFrame = 0;
     clearDelayFrames = 0;
+    SetBossMashCamera(false, 640.0f, 360.0f);
     SetCameraFollowY(360.0f); // 戦闘中は固定画面
 }
 
+// ------------------------------------------------------------------------
+// 【関数】UpdateStage()
+// 何をする？ プレイヤーとボスを更新し、ネジ解除・連打・ダメージ・クリアを接続する。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void UpdateStage(void) {
     // 【F8】エディターで保存したtxtをゲーム中に読み直し、同じ配置から再テスト。
     // キー押しっぱなしによる連続リロードを防ぐためエッジ判定。
@@ -50,10 +72,11 @@ void UpdateStage(void) {
     f8Prev = f8Now;
     if (reloadIndicatorFrames > 0)--reloadIndicatorFrames;
     if (reloadIndicatorFrames < 0)++reloadIndicatorFrames;
-    // 【重要】ボス外装の取っ掛かり3点を移動杭とは別の目標として渡す。
-    // 各外装は狙ってJ→触手で引っかけて剥がす。ボス側へ移動しない。
+    // 【重要】ボス外装の四隅ネジ4点を移動杭とは別の目標として渡す。
+    // 各ネジは右スティックで狙って接続すると外せる。プレイヤー自身はボスへ引き寄せられない。
     Vector2 armorPoints[BossStage1::kArmorPlates];
     bool armorExists[BossStage1::kArmorPlates];
+    // 【繰り返し】対象（触手・ネジ・弾など）を順に確認する。
     for (int i = 0;i < BossStage1::kArmorPlates;++i) {
         armorPoints[i] = boss.GetArmorGripPoint(i);
         armorExists[i] = boss.IsArmorAttached(i);
@@ -62,6 +85,7 @@ void UpdateStage(void) {
     if (arena.Update()) {
         boss.SetBattleSettings(liveBattleConfig);
         boss.Initialize({ liveBattleConfig.bossSpawn.x,liveBattleConfig.bossSpawn.y });
+        // 【注目】【重要：ポインタ】毎フレーム変わるプレイヤーの位置をボスAIへ渡す。
         boss.SetTarget(&arena.GetPlayerPosition());
         stageCleared = false;
         tutorialFrame = 0;
@@ -71,6 +95,11 @@ void UpdateStage(void) {
     }
     ++tutorialFrame;
     PortalPlayer& player = arena.GetPlayer();
+    // 【連打】攻撃が届かない距離でもスタン中は右スティック弾き直しでコアを殴れる。
+    const bool mashPulse = arena.ConsumeMashPulse();
+    if (boss.IsMashActive() && mashPulse) boss.RegisterMashHit();
+    SetBossMashCamera(boss.IsMashActive(), boss.GetPosition().x, boss.GetPosition().y);
+
     // 四隅ネジは接続時に解除される。長押し張力ゲージは使わない。
     // 四隅のネジを1個ずつ外す。最後の1個で外装めくれ演出開始。
     const int peelRequest = player.ConsumeArmorPeelRequest();
@@ -93,6 +122,8 @@ void UpdateStage(void) {
         boss.SetTargetMotion(player.GetVelocity(), player.IsGrounded(), usingWire);
         boss.NoteWireMotion(usingWire);
         boss.Update();
+        // Update中に墜落→連打へ切り替わるので、カメラ状態を毎フレーム更新。
+        SetBossMashCamera(boss.IsMashActive(), boss.GetPosition().x, boss.GetPosition().y);
         // 【スタン復帰の吹き飛ばし】1回だけ起きるイベントを消費。
         // プレイヤーは下へ落下。ワイヤーを使えば着地後に即復帰できる。
         if (boss.ConsumeWakeBlast()) {
@@ -105,10 +136,11 @@ void UpdateStage(void) {
         // 【攻撃の区別】ボス外装は専用ポイントを狙って引いた時だけ剥がれる。
         // 普通の攻撃は外装への衝撃、スピンはカウンター、剥がした後はコアHPへダメージ。
         // 装甲剥離前は機体全体、剥離後はエディターで調整した赤いコアの円判定。
-        const PortalAttackKind attack = player.HitTestEnemy(
+        const PortalAttackKind attack = boss.IsMashActive() ? PortalAttackKind::None : player.HitTestEnemy(
             boss.IsCoreExposed() ? boss.GetCoreHitPoint() : boss.GetPosition(),
             boss.IsCoreExposed() ? boss.GetCoreHitRadius() : Boss::kHitRadius);
         int damage = 0;
+        // 【分岐表】現在の状態/攻撃種類に応じて、実行する処理を分ける。
         switch (attack) {
         case PortalAttackKind::Normal:damage = PortalConfig::kNormalDamage;break;
         case PortalAttackKind::Spin:damage = PortalConfig::kSpinDamage;break;
@@ -132,9 +164,20 @@ void UpdateStage(void) {
     }
 }
 
+// ------------------------------------------------------------------------
+// 【関数】DrawStage()
+// 何をする？ 背景→ボス→プレイヤー→UIの順で画面を描く。後から描くものが前に出る。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 void DrawStage(void) {
-    arena.Draw();
+    // 描画順：背景・杭 → ボス → プレイヤー・触手 → HUD。
+    // ボスの後に背景を描くとボスが隠れるため、この順序を守る。
+    // 【注目】【描画順①】床・背景・杭を先に描く（最も奥）。
+    arena.DrawWorld();
+    // 【注目】【描画順②】ボスはプレイヤーより後ろに描く。
     boss.Draw();
+    // 【注目】【描画順③】プレイヤーと触手は最後に描いて手前へ。
+    arena.DrawPlayer();
     arena.DrawHUD();
     if (reloadIndicatorFrames > 0)Novice::ScreenPrintf(18, 210, "BOSS EDITOR DATA RELOADED (F8)");
     else if (reloadIndicatorFrames < 0)Novice::ScreenPrintf(18, 210, "NO VALID bossbattle_stage1.txt");
@@ -165,6 +208,7 @@ void DrawStage(void) {
     // 単調な攻撃ではなく「予兆を読む→対処を選ぶ」遊びにする。
     if (boss.GetState() == BossState::Warning) {
         const char* guide = "DODGE!";
+        // 【分岐表】現在の状態/攻撃種類に応じて、実行する処理を分ける。
         switch (boss.GetSelectedAttack()) {
         case BossAttack::Rush: guide = "RUSH: FLOOR LANE - JUMP / WIRE!";break;
         case BossAttack::Shot: guide = "SHOT: TWO TRIPLE VOLLEYS - KEEP MOVING!";break;
@@ -174,7 +218,21 @@ void DrawStage(void) {
         }
         Novice::ScreenPrintf(18, 168, "%s", guide);
     }
-    if (boss.IsArmorStun()) Novice::ScreenPrintf(975, 155, "ARMOR OPEN! ATTACK NOW!");
+    // 【連打タイム】既存ScreenPrintfとBOX2枚だけのUI。追加パーティクルなし。
+    if (boss.IsMashActive()) {
+        const int hits = boss.GetMashCount();
+        const int remaining = boss.GetMashTimeLeft();
+        const int bar = remaining * 320 / BossStage1::kMashTimeFrames;
+        Novice::DrawBox(430, 145, 420, 106, 0, 0x131526D9, kFillModeSolid);
+        Novice::ScreenPrintf(492, 160, "RENDA!! RIGHT STICK / J !!");
+        Novice::ScreenPrintf(515, 188, "COMBO %d HITS", hits);
+        Novice::DrawBox(480, 215, 320, 12, 0, 0x292E44FF, kFillModeSolid);
+        Novice::DrawBox(480, 215, bar, 12, 0, 0xFFD35CFF, kFillModeSolid);
+    }
+    else if (boss.IsArmorFalling()) {
+        Novice::ScreenPrintf(490, 157, "ARMOR BROKEN! COPTER FALLING!");
+    }
+    if (boss.IsArmorStun()) Novice::ScreenPrintf(975, 155, "ARMOR OPEN! MASH NOW!");
     else if (boss.IsWaking()) Novice::ScreenPrintf(975, 155, "WAKE BLAST! FALL BACK!");
     else if (boss.IsDizzy())
         Novice::ScreenPrintf(975, 155, "WIRE DODGE SUCCESS! COUNTER CHANCE!");
@@ -195,6 +253,7 @@ void DrawStage(void) {
     }
 #ifdef _DEBUG
     const char* attack = "SHOT";
+    // 【分岐表】現在の状態/攻撃種類に応じて、実行する処理を分ける。
     switch (boss.GetSelectedAttack()) {
     case BossAttack::Press:attack = "PRESS";break;
     case BossAttack::Shot:attack = "SHOT";break;
@@ -205,4 +264,9 @@ void DrawStage(void) {
     Novice::ScreenPrintf(18, 189, "AI attack: %s, cycle: %d", attack, boss.GetAttackCount());
 #endif
 }
+// ------------------------------------------------------------------------
+// 【関数】GetGravityScale()
+// 何をする？ このステージで使う重力方向のベクトルを返す。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
+// ------------------------------------------------------------------------
 Vector2 GetGravityScale(void) { return kGravityScale; }

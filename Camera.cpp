@@ -15,6 +15,8 @@ struct Camera {
     int shakeTotal = 0;
     float shakePower = 0.0f;
     int shakeTick = 0;
+    bool bossMashCamera = false;
+    Vector2 mashFocus = { 640.0f,360.0f };
     float followTargetY = 360.0f; // 上下スクロール用の目標値
     float zoomPunch = 0.0f;
     int zoomPunchRemaining = 0;
@@ -59,6 +61,11 @@ void InitCamera(void) {
     camera = {};
 }
 
+void SetBossMashCamera(bool enabled, float bossX, float bossY) {
+    camera.bossMashCamera = enabled;
+    camera.mashFocus = { bossX,bossY };
+}
+
 void SetCameraFollowY(float playerWorldY) {
     // 【ステージ1】固定カメラ。ワイヤー回避中も視界を上下させない。
     // 関数名はほかのステージが使っても困らないよう残している。
@@ -68,15 +75,21 @@ void SetCameraFollowY(float playerWorldY) {
 
 void UpdateCamera(void) {
     // 座標をいきなり変えず、8%ずつ追従。描画を一切増やさず滑らかにする。
-    camera.pos.y += (camera.followTargetY - camera.pos.y) * 0.08f;
+    const float goalZoom = camera.bossMashCamera ? 1.28f : 1.0f;
+    // 【注意】通常時の描画倍率は1.0。連打中だけカメラを一時的に寄せる。
+    camera.zoom += (goalZoom - camera.zoom) * 0.12f;
+    if (std::fabs(camera.zoom - goalZoom) < 0.001f)camera.zoom = goalZoom;
+    const float focusX = camera.bossMashCamera ? camera.mashFocus.x : 640.0f;
+    const float focusY = camera.bossMashCamera ? camera.mashFocus.y : camera.followTargetY;
+    camera.pos.x += (focusX - camera.pos.x) * 0.12f;
+    camera.pos.y += (focusY - camera.pos.y) * 0.12f;
     // ボス着地や外装剥がれでは、一瞬だけ世界を拡大する。オブジェクト追加なし。
     if (camera.zoomPunchRemaining > 0) {
-        //const float t = camera.zoomPunchRemaining / static_cast<float>(camera.zoomPunchTotal);
-        camera.zoom = 1.0f; // 背景も含めて描画1倍を維持。衝撃は揺れで演出。
+        // ズームは上の専用補間で制御。既存のPunch演出はシェイク優先。
         --camera.zoomPunchRemaining;
     }
     else {
-        camera.zoom = 1.0f;
+        // 通常時は上の補間で1.0fへ戻す。
     }
     if (camera.shakeRemaining > 0) {
         float decay = static_cast<float>(camera.shakeRemaining) /

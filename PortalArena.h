@@ -11,10 +11,15 @@ public:
     // エディターが配置した杭をゲームに反映する。リロード時も使用。
     void SetBattleSettings(const BossBattleSettings& settings);
     bool Update(); // Rでリスタートするとtrue
-    void Draw() const;
+    void Draw() const; // 従来の描画（他の画面で使用する場合の互換用）
+    void DrawWorld() const; // 背景・床・グリップポイントだけ
+    void DrawPlayer() const; // プレイヤーと触手だけ
     void DrawHUD() const;
     const Vector2& GetPlayerPosition() const { return player_.GetPosition(); }
     PortalPlayer& GetPlayer() { return player_; }
+    // 【連打】右スティックの弾き直し/キーボードJの押し直しをそのまま流用。
+    bool ConsumeMashPulse() { const bool b = mashPulse_; mashPulse_ = false; return b; }
+
     const PortalPlayer& GetPlayer() const { return player_; }
     // 【外装の取っ掛かり】ボスに付けた3点。通常の杭とは別のターゲット。
     // enabled=falseの板は入力候補に入れず、描画もしない。
@@ -29,6 +34,7 @@ private:
     // 地上から届きやすい左寄りと、連続グラップルしやすい右寄りに配置。
     Vector2 anchors_[kMaxAnchors] = { {155,320},{450,530},{780,360},{1090,530},{270,590},{1180,300} };
     bool connected_ = false;
+    bool mashPulse_ = false;
     bool armorPointEnabled_[BossBattleSettings::kArmorHooks] = {};
     Vector2 armorPoints_[BossBattleSettings::kArmorHooks] = {};
     int frame_ = 0;
