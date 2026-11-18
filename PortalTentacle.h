@@ -8,7 +8,8 @@ class PortalTentacle {
 public:
     void Start(Vector2 origin, Vector2 direction, const Vector2* anchor);
     void StartArmorTether(Vector2 origin, Vector2 armorPoint); // ボス外装：プレイヤーは引き寄せない
-    void SetArmorTarget(Vector2 point); // ボスが動いても外装の取っ掛かりを追う
+    void SetArmorTarget(Vector2 point);
+    void SetGripTarget(Vector2 point); // 動くボスのポイントに接続中の先端を追従させる // ボスが動いても外装の取っ掛かりを追う
     bool IsArmorTether() const { return armorTether_ && IsActive(); }
     // 開始したグラップルはボタンを離しても維持。Playerが近距離で自動解除。
     void Update();

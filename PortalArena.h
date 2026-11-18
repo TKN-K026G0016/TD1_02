@@ -24,6 +24,9 @@ public:
     // 【外装の取っ掛かり】ボスに付けた3点。通常の杭とは別のターゲット。
     // enabled=falseの板は入力候補に入れず、描画もしない。
     void SetBossArmorTargets(const Vector2 points[BossBattleSettings::kArmorHooks], const bool enabled[BossBattleSettings::kArmorHooks]);
+    // ジェット4・パイプ・目。ボスが動くたび位置を更新する。
+    static constexpr int kExtraBossPoints = 6;
+    void SetBossExtraTargets(const Vector2 points[kExtraBossPoints], const bool enabled[kExtraBossPoints]);
 private:
     // 【混雑解消】4個→3個。両端＋中央上で、それぞれ離れた回避ルートを作る。
     static constexpr int kMaxAnchors = BossBattleSettings::kMaxAnchors;
@@ -37,5 +40,7 @@ private:
     bool mashPulse_ = false;
     bool armorPointEnabled_[BossBattleSettings::kArmorHooks] = {};
     Vector2 armorPoints_[BossBattleSettings::kArmorHooks] = {};
+    bool extraPointEnabled_[kExtraBossPoints] = {};
+    Vector2 extraPoints_[kExtraBossPoints] = {};
     int frame_ = 0;
 };

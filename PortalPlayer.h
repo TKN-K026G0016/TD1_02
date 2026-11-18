@@ -10,7 +10,8 @@ class PortalPlayer {
 public:
     void Initialize(Vector2 position);
     // fixedCount個までは移動杭。それ以降はボスの外装取っ掛かり。
-    void Update(const PortalCommands& input, const Vector2* anchors, int anchorCount, int fixedCount = 4);
+    void Update(const PortalCommands& input, const Vector2* anchors,
+        int anchorCount, int fixedCount = 4, int breakableCount = 4);
     int ConsumeArmorPeelRequest();
     // 【外装フック】引っ張っている相手と張力を表示・ボスの姿勢変形に使う。
     bool IsPullingArmor() const { return armorPeelFrames_ > 0; }
@@ -44,7 +45,8 @@ public:
 
 private:
     void ReleaseAll();
-    int FindAnchor(Vector2 direction, const Vector2* anchors, int count, int fixedCount) const;
+    int FindAnchor(Vector2 direction, const Vector2* anchors,
+        int count, int fixedCount, int breakableCount) const;
     void StartSpin();
 
     Vector2 position_ = {}, velocity_ = {}, aim_ = { 1,0 };

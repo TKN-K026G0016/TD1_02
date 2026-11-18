@@ -42,6 +42,10 @@ void PortalTentacle::SetArmorTarget(Vector2 point) {
     if (armorTether_ && IsActive()) end_ = point;
 }
 
+void PortalTentacle::SetGripTarget(Vector2 point) {
+    if (IsGripping()) end_ = point;
+}
+
 void PortalTentacle::Release() {
     if (state_ == TentacleState::Inactive || state_ == TentacleState::Retracting) return;
     releaseAmount_ = amount_;
