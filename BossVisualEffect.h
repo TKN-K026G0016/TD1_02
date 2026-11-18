@@ -59,7 +59,7 @@ public:
     void OnMuzzleFlash(Vector2 position);
     void Update(Vector2 bossPosition);
     void DrawBehind(Vector2 bossPosition) const;
-    void DrawBody(Vector2 bossPosition) const;
+    void DrawBody(Vector2 bossPosition, float bodyLean = 0.0f) const;
     void DrawFront() const;
     void DrawBullet(Vector2 position, Vector2 velocity) const;
 };

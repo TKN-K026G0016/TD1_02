@@ -78,18 +78,24 @@ void BossVisualEffect::DrawBehind(Vector2 pos) const {
         PortalDraw::Box({ impactPosition_.x + w * 0.5f,impactPosition_.y + 3 }, w, 5, 0xFFEFA855);
     }
 }
-void BossVisualEffect::DrawBody(Vector2 pos) const {
-    // 【サイズ厳守】ユーザー指定の256×256、倍率1.0固定。攻撃中もサイズは変えない。
-    // 派手さは色・傾き・位置移動・硬直で表す。Noviceへの描画はBOX1枚。
+void BossVisualEffect::DrawBody(Vector2 pos, float bodyLean) const {
+ 
+    static const int bodyHandle = Novice::LoadTexture("./resources/texture/boss/form1/boss_body");
     Vector2 draw = pos;
-    if (mode_ == BossVfxMode::Idle)draw.y += std::sin(globalFrame_ * 0.055f) * 2.5f;
-    if (mode_ == BossVfxMode::Warning)draw.x += std::sin(modeFrame_ * 0.8f) * 3.0f;
-    const float lean = mode_ == BossVfxMode::Rush ?
-        (lastVelocityX_ >= 0.0f ? -0.12f : 0.12f) : 0.0f;
-    const unsigned int color = mode_ == BossVfxMode::Warning && (modeFrame_ / 5) % 2 ?
-        0xFF9090FF : 0xFFFFFFFF;
-    if (lean != 0.0f)PortalDraw::RotatedBox(draw, 256.0f, 256.0f, lean, color);
-    else PortalDraw::Box(draw, 256.0f, 256.0f, color);
+    // 見た目の位置を実際の当たり判定からずらさない（4ネジ照準と一致させる）。
+    if (bodyHandle >= 0) {
+        const Vector2i center = PortalDraw::ToScreen(draw);
+        const float zoom = GetCameraZoom();
+        const int side = PortalDraw::Scale(256.0f);
+        const unsigned int tint = mode_ == BossVfxMode::Warning && (modeFrame_ / 5) % 2 ?
+            0xFFB0B0FF : 0xFFFFFFFF;
+        Novice::DrawSprite(center.x - side / 2, center.y - side / 2,
+            bodyHandle, zoom, zoom, -bodyLean, tint);
+    }
+    else {
+        // テクスチャが見つからない環境でも戦闘を続行できる。
+        PortalDraw::Box(draw, 256.0f, 256.0f, 0xE9ECF0FF);
+    }
 }
 
 void BossVisualEffect::DrawFront() const {

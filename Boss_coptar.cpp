@@ -1,11 +1,9 @@
-// 【このファイルの役割】Boss_coptar.cpp — コプターの行動・外装・戦闘AI
-// 5種類の攻撃、4ネジ解除、墜落、連打スタン、第2段階、被弾、撃破を管理する。
-
 #include "Boss_coptar.h"
 #include "Camera.h"
 #include "PortalDraw.h"
 #include "PortalConfig.h"
 #include <cmath>
+#include <Novice.h>
 
 namespace {
     float Clamp(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
@@ -18,13 +16,61 @@ namespace {
         return a < b ? (a + step > b ? b : a + step) : (a - step < b ? b : a - step);
     }
 }
+namespace {
+    struct BossPartArt { const char* path; float left; float top; int width; int height; };
+    constexpr float kArtScale = 0.5f;
+    // 本体 / プロペラ1〜3（本体と目は外れない）
+    const BossPartArt kBreakArt[4] = {
+        {"./resources/texture/boss/form1/boss_body.png",79,111,256,256},
+        {"./resources/texture/boss/form1/boss_propeller1.png",231,107,256,256},
+        {"./resources/texture/boss/form1/boss_propeller2.png",91,75,256,256},
+        {"./resources/texture/boss/form1/boss_propeller3.png",-47,108,256,256}
+    };
+    // ジェット1〜4 / パイプ / 目
+    const BossPartArt kAccessoryArt[Boss::kAccessoryGripCount] = {
+        {"./resources/texture/boss/form1/boss_jet1.png",45,243,256,256},
+        {"./resources/texture/boss/form1/boss_jet2.png",115,247,256,256},
+        {"./resources/texture/boss/form1/boss_jet3.png",116,236,256,256},
+        {"./resources/texture/boss/form1/boss_jet4.png",304,216,256,256},
+        {"./resources/texture/boss/form1/boss_pipes.png",208,99,256,256},
+        {"./resources/texture/boss/form1/boss_eye.png",82,204,128,128}
+    };
+    Vector2 ImageOffset(const BossPartArt& art) {
+        return { (art.left + art.width * 0.5f - 256.0f) * kArtScale,
+                (256.0f - art.top - art.height * 0.5f) * kArtScale };
+    }
+    void DrawImagePart(const BossPartArt& art, Vector2 base, float angle, int& handle) {
+        if (handle == -2) handle = Novice::LoadTexture(art.path);
+        const Vector2 offset = ImageOffset(art);
+        const Vector2 center = { base.x + offset.x, base.y + offset.y };
+        if (handle >= 0) {
+            const Vector2i screen = PortalDraw::ToScreen(center);
+            const float drawScale = GetCameraZoom() * kArtScale;
+            const int w = static_cast<int>(art.width * drawScale);
+            const int h = static_cast<int>(art.height * drawScale);
+            Novice::DrawSprite(screen.x - w / 2, screen.y - h / 2,
+                handle, drawScale, drawScale, -angle, 0xFFFFFFFF);
+        }
+        else {
+            // 画像を見つけられない場合でもゲームを止めず、目印のBOXを表示する。
+            PortalDraw::Box(center, 22.0f, 22.0f, 0xA9ACC6FF);
+        }
+    }
+}
+
 // オブジェクトを使い始めるときに値を初期状態へ戻す。リトライ時にも重要。
 void Boss::Initialize(Vector2 spawnPos) {
     homePosition_ = position_ = spawnPos;
+    flightVelocity_ = {}; flightTimer_ = 0; flightDirection_ = 1;
     targetPosition_ = nullptr; // Stage::InitStageがあとからSetTargetで接続する
     hp_ = kMaxHp;
     armorRebuilt_ = false; rebuildOnWake_ = false; mashCount_ = 0; armorFallVelocity_ = 0.0f;
-    armorPlates_ = BossStage1::kArmorPlates;
+    armorPlates_ = BossStage1::kArmorPlates - 1;
+    for (int i = 0; i < kAccessoryGripCount - 1; ++i) {
+        accessoryAttached_[i] = true;
+        detachedAccessoryPosition_[i] = {};
+        detachedAccessoryFrames_[i] = 0;
+    }
     // 【初期化】毎回すべての外装ポイントを復元する。
     for (int i = 0;i < BossStage1::kArmorPlates;++i) {
         armorAttached_[i] = true; peeledPosition_[i] = {}; peeledFrames_[i] = 0;
@@ -54,12 +100,49 @@ void Boss::SetTarget(const Vector2* playerPosition) { targetPosition_ = playerPo
 // ボスのX移動と一緒に動く。0=左/1=中央/2=右。
 // 既存のコア円とは別の「狙って掴む専用ポイント」。
 bool Boss::IsArmorAttached(int plate) const {
-    return plate >= 0 && plate < BossStage1::kArmorPlates && armorAttached_[plate] && !IsDefeated();
+    if (plate < 0 || plate >= BossStage1::kArmorPlates || IsDefeated()) return false;
+    // まずジェットとパイプを外す。次に3本のプロペラが狙える。
+    if (!AllAccessoriesRemoved()) return false;
+    if (plate == 0) {
+        // 本体は剥がせないが、プロペラ3本がなくなったら移動用グリップとして使える。
+        return armorPlates_ == 0;
+    }
+    return armorAttached_[plate];
 }
 Vector2 Boss::GetArmorGripPoint(int plate) const {
     if (plate < 0 || plate >= BossStage1::kArmorPlates) return position_;
-    return { position_.x + battleSettings_.armorHooks[plate].x,
-        position_.y + battleSettings_.armorHooks[plate].y };
+    return { position_.x + battleSettings_.partGrips[plate].x,
+        position_.y + battleSettings_.partGrips[plate].y };
+}
+Vector2 Boss::GetAccessoryGripPoint(int index) const {
+    if (index < 0 || index >= kAccessoryGripCount) return position_;
+    return { position_.x + battleSettings_.accessoryGrips[index].x,
+        position_.y + battleSettings_.accessoryGrips[index].y };
+}
+bool Boss::AllAccessoriesRemoved() const {
+    for (int i = 0; i < kAccessoryGripCount - 1; ++i)
+        if (accessoryAttached_[i]) return false;
+    return true;
+}
+bool Boss::IsAccessoryGripEnabled(int index) const {
+    if (index < 0 || index >= kAccessoryGripCount || IsDefeated()) return false;
+    // 最終段階：全ての外装が外れたら目だけをグリップ可能にする。
+    if (index == kAccessoryGripCount - 1)
+        return armorPlates_ == 0 && AllAccessoriesRemoved();
+    // 最初の段階：ジェット4個とパイプは最初から剥がせる。
+    return accessoryAttached_[index];
+}
+bool Boss::TryPeelAccessory(int index) {
+    if (index < 0 || index >= kAccessoryGripCount - 1 || !IsAccessoryGripEnabled(index)) return false;
+    if (state_ == BossState::ArmorCurl || state_ == BossState::ArmorStun || IsDefeated()) return false;
+    accessoryAttached_[index] = false;
+    detachedAccessoryPosition_[index] = position_;
+    detachedAccessoryFrames_[index] = 100;
+    hitstop_ = 3;
+    ShakeCamera(2.5f, 4);
+    // ジェット・パイプをすべて外しても墜落しない。
+    // 次はプロペラ3本を外す段階になる。
+    return true;
 }
 // 外装の引っ張られ具合を演出値として反映する。
 void Boss::SetArmorStrain(int plate, float progress) {
@@ -68,19 +151,21 @@ void Boss::SetArmorStrain(int plate, float progress) {
     armorStrain_ = Clamp(progress, 0.0f, 1.0f);
 }
 
-// 【外装ネジ】四隅の1点を触手で掴めた瞬間にネジが外れる。
+// 【破壊ポイント】プロペラ3本は触手で掴むと外れる。本体は外れない。
 // ネジを1つ外してもコアは出ない。4点すべて外してから外装がペロっとめくれる。
 // ネジの番号が有効ならそのネジを外す。全解除時は外装めくれを開始する。
 bool Boss::TryPeelArmor(int plate) {
-    if (!IsArmorAttached(plate) || state_ == BossState::ArmorCurl || state_ == BossState::ArmorStun) return false;
+    // 本体（0番）と目は破壊対象ではない。
+    if (plate == 0 || !IsArmorAttached(plate) ||
+        state_ == BossState::ArmorCurl || state_ == BossState::ArmorStun) return false;
     armorAttached_[plate] = false;
     --armorPlates_;
-    peeledPosition_[plate] = GetArmorGripPoint(plate);
-    peeledFrames_[plate] = 20;
+    peeledPosition_[plate] = position_; // 離脱時の本体位置を固定。落ちる部品だけ移動する
+    peeledFrames_[plate] = 100; // 落下が視認できるよう1秒以上表示する
     hitstop_ = 3;
     ShakeCamera(2.5f, 4);
-    if (armorPlates_ == 0) {
-        // 全ネジ解除！専用の外装めくれ→スタンへ進む。ここでHPはまだ減らさない。
+    if (armorPlates_ == 0 && AllAccessoriesRemoved()) {
+        // ジェット・パイプ → プロペラ3本を外し終えたら墜落スタン。
         ChangeState(BossState::ArmorCurl);
         hitstop_ = 0;
         PunchCamera(0.11f, 10);
@@ -177,7 +262,10 @@ void Boss::ChangeState(BossState next) {
     stateFrame_ = 0;
     // 【注目】【状態別の開始処理】新状態になった瞬間に目標固定・弾消去・カメラ演出等を行う。
     switch (state_) {
-    case BossState::Idle: visual_.SetMode(BossVfxMode::Idle); break;
+    case BossState::Idle:
+        flightVelocity_ = {};
+        visual_.SetMode(BossVfxMode::Idle);
+        break;
     case BossState::Warning:
         // プレス予兆は最初に標的を決め、攻撃直前には追尾しない。
         pressTargetX_ = targetPosition_ ? targetPosition_->x : position_.x;
@@ -267,7 +355,10 @@ void Boss::ChangeState(BossState next) {
 void Boss::BeginArmorRebuild() {
     armorRebuilt_ = true;
     rebuildOnWake_ = false;
-    armorPlates_ = BossStage1::kArmorPlates;
+    armorPlates_ = BossStage1::kArmorPlates - 1;
+    for (int i = 0; i < kAccessoryGripCount - 1; ++i) {
+        accessoryAttached_[i] = true; detachedAccessoryFrames_[i] = 0;
+    }
     for (int i = 0;i < BossStage1::kArmorPlates;++i) {
         armorAttached_[i] = true;
         peeledFrames_[i] = 0;
@@ -416,7 +507,7 @@ void Boss::UpdatePress() {
         float ease = 1.0f - (1.0f - t) * (1.0f - t);
         position_.x = pressReturnStart_.x + (homePosition_.x - pressReturnStart_.x) * ease;
         position_.y = pressReturnStart_.y + (homePosition_.y - pressReturnStart_.y) * ease;
-        if (pressFrame_ >= 34) { position_ = homePosition_;ChangeState(BossState::Idle); }
+        if (pressFrame_ >= 34) { ChangeState(BossState::Idle); }
         break;
     }
     }
@@ -524,6 +615,32 @@ int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitS
     }
     return 0;
 }
+// 予兆前の短い待機中も、コプターが同じ一点に固定されないよう移動する。
+// 目的地はプレイヤーから距離を取りつつ画面内に収め、速度をなめらかに変える。
+void Boss::UpdateFlight() {
+    if (--flightTimer_ <= 0) {
+        flightTimer_ = IsEnraged() ? battleSettings_.flightIntervalPhase2 : battleSettings_.flightInterval;
+        flightDirection_ = -flightDirection_;
+        // プレイヤーのすぐ上で静止しないよう左右に散らして位置を決める。
+        const float playerX = targetPosition_ ? targetPosition_->x : 420.0f;
+        aiRandomState_ ^= aiRandomState_ << 13;
+        aiRandomState_ ^= aiRandomState_ >> 17;
+        aiRandomState_ ^= aiRandomState_ << 5;
+        const float random = (aiRandomState_ % 1000u) / 999.0f;
+        const float offset = 320.0f + random * 230.0f;
+        homePosition_.x = Clamp(playerX + flightDirection_ * offset, 280.0f, 1010.0f);
+        homePosition_.y = 400.0f + random * 135.0f;
+    }
+    // 速度ベクトルを目標方向へ少しずつ近づける（急な瞬間移動を防ぐ）。
+    const float maxSpeed = IsEnraged() ? battleSettings_.flightSpeedPhase2 : battleSettings_.flightSpeed;
+    const float wantedX = Clamp((homePosition_.x - position_.x) * 0.065f, -maxSpeed, maxSpeed);
+    const float wantedY = Clamp((homePosition_.y - position_.y) * 0.050f, -maxSpeed * 0.65f, maxSpeed * 0.65f);
+    flightVelocity_.x += (wantedX - flightVelocity_.x) * 0.14f;
+    flightVelocity_.y += (wantedY - flightVelocity_.y) * 0.12f;
+    position_.x = Clamp(position_.x + flightVelocity_.x, 225.0f, 1055.0f);
+    position_.y = Clamp(position_.y + flightVelocity_.y, 345.0f, 555.0f);
+}
+
 void Boss::Update() {
     if (hitCooldown_ > 0) --hitCooldown_;
     if (spinCounterCooldown_ > 0) --spinCounterCooldown_;
@@ -550,8 +667,7 @@ void Boss::Update() {
     case BossState::Idle:
         // 【直した原因③】射撃で横へノックバックした後、そのまま位置がズレ続けていた。
         // 次の技までに必ず戻す。ボスが画面外へ逃げたりフックが射程外にならない。
-        position_.x = Approach(position_.x, homePosition_.x, BossStage1::kShotReturnSpeed);
-        position_.y += (homePosition_.y - position_.y) * 0.18f;
+        UpdateFlight();
         if (stateFrame_ >= (IsEnraged() ? 24 : battleSettings_.idleFrames)) {
             ChooseAttack();
             ChangeState(BossState::Warning);
@@ -603,7 +719,7 @@ void Boss::Update() {
     }
     case BossState::Rush: {
         // 【地上突進】Y座標は一切追跡せず、床のすぐ上を左右に突き抜ける。
-        position_.y = BossStage1::kRushGroundY;
+        position_.y = Approach(position_.y, BossStage1::kRushGroundY, 7.0f);
         // 一瞬逆側へ溜めてから、速度を上げる。線を大量に描かなくても迫力。
         if (stateFrame_ <= 2) position_.x -= rushDirection_ * 3.0f;
         else {
@@ -632,8 +748,7 @@ void Boss::Update() {
             const float dx = homePosition_.x - position_.x;
             position_.x = Approach(position_.x, homePosition_.x, IsEnraged() ? 11.0f : 8.0f);
             position_.y = Approach(position_.y, homePosition_.y, 4.0f);
-            if (Abs(dx) < 9.0f) {
-                position_ = homePosition_;
+            if (Abs(dx) < 9.0f && Abs(homePosition_.y - position_.y) < 5.0f) {
                 ChangeState(rushDodgeStunPending_ ? BossState::Dizzy : BossState::Idle);
             }
         }
@@ -698,6 +813,8 @@ void Boss::Update() {
     // 剥がした板は小さなBOX1枚が斜めへ飛ぶだけ。消えるまで24フレーム。
     for (int i = 0;i < BossStage1::kArmorPlates;++i)
         if (peeledFrames_[i] > 0) --peeledFrames_[i];
+    for (int i = 0; i < kAccessoryGripCount - 1; ++i)
+        if (detachedAccessoryFrames_[i] > 0) --detachedAccessoryFrames_[i];
     UpdateBullets();
     visual_.Update(position_);
 }
@@ -732,7 +849,58 @@ void Boss::Draw() const {
         }
     }
     visual_.DrawBehind(position_);
-    visual_.DrawBody(position_);
+    float bodyLean = 0.0f;
+    if (state_ != BossState::ArmorFalling && state_ != BossState::ArmorImpact &&
+        state_ != BossState::ArmorStun && state_ != BossState::WakeBlast) {
+        if (!armorAttached_[1]) bodyLean -= 0.055f;
+        if (!armorAttached_[2]) bodyLean += 0.045f;
+        if (!armorAttached_[3]) bodyLean += 0.065f;
+    }
+    static int breakHandles[BossStage1::kArmorPlates] = { -2,-2,-2,-2 };
+    static int extraHandles[kAccessoryGripCount] = { -2,-2,-2,-2,-2,-2 };
+
+    // 背面のパーツから描く。最後に本体と目を置くことで重なりが自然になる。
+    for (int order = 0; order < kAccessoryGripCount - 1; ++order) {
+        const int i = (order == 0 ? 4 : order - 1);
+        if (!accessoryAttached_[i] && detachedAccessoryFrames_[i] <= 0) continue;
+        Vector2 center = position_;
+        float angle = bodyLean;
+        if (!accessoryAttached_[i]) {
+            const float t = 100.0f - detachedAccessoryFrames_[i];
+            center = detachedAccessoryPosition_[i];
+            center.x += (i % 2 == 0 ? -1.0f : 1.0f) * t * 2.1f;
+            center.y += t * 1.3f - t * t * 0.18f;
+            angle = t * (i % 2 == 0 ? -0.05f : 0.05f);
+            if (center.y < -180.0f) continue;
+        }
+        DrawImagePart(kAccessoryArt[i], center, angle, extraHandles[i]);
+    }
+    for (int i = 1; i < BossStage1::kArmorPlates; ++i) {
+        if (i != 0 && !armorAttached_[i] && peeledFrames_[i] <= 0) continue;
+        Vector2 center = position_;
+        float angle = bodyLean;
+        if (i != 0 && !armorAttached_[i]) {
+            const float t = 100.0f - peeledFrames_[i];
+            center = peeledPosition_[i];
+            center.x += (i % 2 == 0 ? -1.0f : 1.0f) * t * 2.3f;
+            center.y += t * 1.8f - t * t * 0.20f;
+            angle = t * (i % 2 == 0 ? -0.045f : 0.045f);
+            if (center.y < -180.0f) continue;
+        }
+        DrawImagePart(kBreakArt[i], center, angle, breakHandles[i]);
+    }
+    // 本体装甲は最後まで残し、ほかのパーツの上に重ねる。
+    DrawImagePart(kBreakArt[0], position_, bodyLean, breakHandles[0]);
+    // 目だけは常に一番前に描画。最後に弱点になるが、剥がれたり消えたりしない。
+    DrawImagePart(kAccessoryArt[kAccessoryGripCount - 1], position_, bodyLean,
+        extraHandles[kAccessoryGripCount - 1]);
+    // ボス側のグリップポイントを画像より手前に表示する。
+    for (int i = 0; i < kAccessoryGripCount; ++i) {
+        if (!IsAccessoryGripEnabled(i)) continue;
+        const Vector2 point = GetAccessoryGripPoint(i);
+        PortalDraw::Box(point, 11.0f, 3.0f, 0xC6ECFFFF);
+        PortalDraw::Box(point, 3.0f, 11.0f, 0xC6ECFFFF);
+    }
     // 【連打演出】本体の白BOXを再利用。色を重ねるだけで追加描画は最大1BOX。
     // 256x256の元サイズは変えず、連打で一瞬赤く点滅する。
     if (state_ == BossState::ArmorStun && mashCount_ > 0 && stateFrame_ % 6 < 2) {
@@ -740,21 +908,21 @@ void Boss::Draw() const {
     }
     // 【外装シート】256x256の本体1倍はそのまま。上に薄い外装BOXを1枚重ねる。
     // ネジ4つを外すと、板が下端を支点に回転してペロッとめくれる。
-    if (armorPlates_ > 0 || state_ == BossState::ArmorCurl) {
+    if (state_ == BossState::ArmorCurl) {
         const float t = state_ == BossState::ArmorCurl ?
             Clamp(stateFrame_ / static_cast<float>(BossStage1::kArmorCurlFrames), 0.0f, 1.0f) : 0.0f;
         const float angle = t * t * 1.45f;
         const Vector2 shellCenter = { position_.x + std::sin(angle) * 70.0f,
             position_.y - 85.0f + std::cos(angle) * 84.0f };
-        PortalDraw::RotatedBox(shellCenter, 226.0f, 212.0f, angle, 0xB7C4D1D9);
+        PortalDraw::RotatedBox(shellCenter, 226.0f, 22.0f, angle, 0xB7C4D1CC);
     }
-    // 【外装と取っ掛かり】外装3枚はそれぞれ独立した目標。
+    // プロペラ3本が破壊対象。本体はグリップ可能でも剥がれない。
     // 各板の上に小さな黄色の十字を描き、そこへ触手を当てて引き剥がす。
     // 表示1枚あたりBOX3個。板が減れば描画も減る。
     for (int i = 0;i < BossStage1::kArmorPlates;++i) {
-        if (armorAttached_[i]) {
+        if (IsArmorAttached(i)) {
             const Vector2 p = GetArmorGripPoint(i);
-            // 【フックを引いている最中】同じ板を回転/伸縮するだけで負荷ゼロ増加。
+            // 本体のポイントは移動用。プロペラだけが外れる。
             const float tension = i == armorStrainPlate_ ? armorStrain_ : 0.0f;
             PortalDraw::RotatedBox({ p.x,p.y - 6.0f + tension * 4.0f },
                 34.0f + tension * 12.0f, 16.0f - tension * 4.0f,
@@ -762,19 +930,13 @@ void Boss::Draw() const {
             PortalDraw::Box(p, 13.0f, 3.0f, 0xFFE16AFF);
             PortalDraw::Box(p, 3.0f, 13.0f, 0xFFE16AFF);
         }
-        else if (peeledFrames_[i] > 0) {
-            const float t = 22.0f - peeledFrames_[i];
-            // あえて物理計算だけで派手さを出す：一枚のBOXが回転しながら飛ぶ。
-            const Vector2 p = { peeledPosition_[i].x + (i - 1) * t * 4.0f,
-                peeledPosition_[i].y + t * 5.0f - t * t * 0.25f };
-            PortalDraw::RotatedBox(p, 24.0f, 10.0f, t * 0.22f + (i - 1) * 0.3f, 0xE7E5DDFF);
-        }
+
     }
     if (state_ == BossState::Dizzy || state_ == BossState::ArmorStun || state_ == BossState::ArmorImpact) {
         // 回避成功の合図：本体の上に黄色BOXを1枚。新規パーティクル不要。
         PortalDraw::Box({ position_.x,position_.y + 53.0f }, 49.0f, 7.0f, 0xFFEA73FF);
     }
-    if (armorPlates_ == 0 && !IsDefeated() && state_ != BossState::ArmorCurl) {
+    if (IsCoreExposed() && !IsDefeated() && state_ != BossState::ArmorCurl) {
         const float pulse = 1.0f + 0.17f * std::sin(stateFrame_ * 0.21f);
         PortalDraw::Box(GetCoreHitPoint(), 20.0f * pulse, 22.0f * pulse,
             IsWeakPointOpen() ? 0xFF3030FF : 0xC73A48FF);

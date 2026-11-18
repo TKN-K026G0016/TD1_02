@@ -13,8 +13,12 @@
 #include "Camera.h"
 #include <Novice.h>
 #include <dinput.h>
+#include <cstring>
 #include "BossBattleSettings.h"
 #include "PortalMath.h"
+#ifdef USE_IMGUI
+#include <imgui.h>
+#endif
 
 // ================================================================
 // 【第1ステージ】「突進の予兆→ワイヤー回避→失速時に反撃→外装/コアを破壊」。
@@ -30,6 +34,136 @@ static bool f8Prev = false;
 static int tutorialFrame = 0;
 static int clearDelayFrames = 0; // ボス撃破後、短い倒れる演出のあとクリア
 static constexpr Vector2 kGravityScale = { 0.0f,-1.2f };
+#ifdef USE_IMGUI
+static bool showBattleEditor = true;
+static bool f9Prev = false;
+static bool battleEditorDirty = false;
+static char battleEditorMessage[128] = "Change values, then Save";
+static bool ResetBossBattleFromEditor() {
+    if (!liveBattleConfig.Valid()) return false;
+    arena.SetBattleSettings(liveBattleConfig);
+    boss.SetBattleSettings(liveBattleConfig);
+    arena.Initialize();
+    arena.SetBattleSettings(liveBattleConfig);
+    boss.Initialize({ liveBattleConfig.bossSpawn.x, liveBattleConfig.bossSpawn.y });
+    boss.SetTarget(&arena.GetPlayerPosition());
+    stageCleared = false;
+    clearDelayFrames = 0;
+    SetBossMashCamera(false, 640.0f, 360.0f);
+    return true;
+}
+
+// すべてワールド座標(+Yが上)。UIの入力値はBossBattleSettingsで検証してから反映。
+static void DrawBossBattleEditor() {
+    if (!showBattleEditor) return;
+    ImGui::SetNextWindowSize(ImVec2(425, 625), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Stage 1 - Boss Battle Editor", &showBattleEditor)) { ImGui::End(); return; }
+    ImGui::TextUnformatted("Edit while playing / F8: reload saved settings");
+    ImGui::Separator();
+    bool changed = false;
+    auto valueF = [&](const char* label, float* value, float min, float max) {
+        if (ImGui::SliderFloat(label, value, min, max, "%.2f")) changed = true;
+        };
+    auto valueI = [&](const char* label, int* value, int min, int max) {
+        if (ImGui::SliderInt(label, value, min, max)) changed = true;
+        };
+    if (ImGui::CollapsingHeader("1. Boss movement", ImGuiTreeNodeFlags_DefaultOpen)) {
+        valueF("Fly speed", &liveBattleConfig.flightSpeed, 0.1f, 15.0f);
+        valueF("Fly speed (phase 2)", &liveBattleConfig.flightSpeedPhase2, 0.1f, 20.0f);
+        valueI("Change destination frames", &liveBattleConfig.flightInterval, 10, 240);
+        valueI("Change destination (phase 2)", &liveBattleConfig.flightIntervalPhase2, 10, 240);
+        if (ImGui::DragFloat2("Spawn position", &liveBattleConfig.bossSpawn.x, 1.0f, 30.0f, 1250.0f)) changed = true;
+        valueI("Wait before attack", &liveBattleConfig.idleFrames, 8, 180);
+    }
+    if (ImGui::CollapsingHeader("2. Rush attack")) {
+        valueF("Rush max speed", &liveBattleConfig.rushSpeed, 5.0f, 50.0f);
+        valueF("Rush acceleration", &liveBattleConfig.rushAccel, 0.1f, 10.0f);
+        valueI("Rush warning (frames)", &liveBattleConfig.rushWarning, 8, 180);
+        valueI("Rush counter time", &liveBattleConfig.rushDizzy, 0, 240);
+    }
+    if (ImGui::CollapsingHeader("3. Shots and press")) {
+        valueF("Shot prediction", &liveBattleConfig.shotPredict, 0, 40);
+        valueI("Shot warning", &liveBattleConfig.shotWarning, 8, 180);
+        valueF("Press max speed", &liveBattleConfig.pressSpeed, 5, 80);
+        valueF("Press acceleration", &liveBattleConfig.pressAccel, 0.1f, 10);
+        valueI("Press warning", &liveBattleConfig.pressWarning, 8, 180);
+        valueI("Press recovery", &liveBattleConfig.pressStun, 0, 180);
+    }
+    if (ImGui::CollapsingHeader("4. Top and yoyo")) {
+        valueF("Top speed", &liveBattleConfig.topInitialSpeed, 3, 45);
+        valueI("Top duration", &liveBattleConfig.topDuration, 30, 300);
+        valueF("Yoyo range", &liveBattleConfig.yoyoRange, 100, 900);
+        valueI("Yoyo duration", &liveBattleConfig.yoyoDuration, 30, 300);
+        valueI("Toy warning", &liveBattleConfig.toyWarning, 8, 180);
+    }
+    if (ImGui::CollapsingHeader("5. Background grips")) {
+        valueI("Background grip count", &liveBattleConfig.anchorCount, 1, BossBattleSettings::kMaxAnchors);
+        for (int i = 0; i < liveBattleConfig.anchorCount; ++i) {
+            ImGui::PushID(i);
+            if (ImGui::DragFloat2("Grip XY", &liveBattleConfig.anchors[i].x, 1.0f, 30.0f, 1250.0f)) changed = true;
+            ImGui::PopID();
+        }
+    }
+    if (ImGui::CollapsingHeader("6. Boss parts - grip offsets")) {
+        const char* partNames[] = { "Body", "Propeller L", "Propeller Center", "Propeller R" };
+        for (int i = 0; i < 4; ++i) {
+            ImGui::PushID(100 + i);
+            if (ImGui::DragFloat2(partNames[i], &liveBattleConfig.partGrips[i].x, 1.0f, -320.0f, 320.0f)) changed = true;
+            ImGui::PopID();
+        }
+        const char* extraNames[] = { "Jet 1", "Jet 2", "Jet 3", "Jet 4", "Pipe", "Eye" };
+        for (int i = 0; i < 6; ++i) {
+            ImGui::PushID(200 + i);
+            if (ImGui::DragFloat2(extraNames[i], &liveBattleConfig.accessoryGrips[i].x, 1.0f, -320.0f, 320.0f)) changed = true;
+            ImGui::PopID();
+        }
+        ImGui::TextWrapped("Offsets are relative to boss center; visual PNG positions stay unchanged.");
+    }
+    if (ImGui::CollapsingHeader("7. Core and original armor hooks")) {
+        if (ImGui::DragFloat2("Core offset XY", &liveBattleConfig.coreOffset.x, 1.0f, -100.0f, 100.0f)) changed = true;
+        valueF("Core hit radius", &liveBattleConfig.coreRadius, 24, 120);
+        for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) {
+            ImGui::PushID(300 + i);
+            if (ImGui::DragFloat2("Legacy hook", &liveBattleConfig.armorHooks[i].x, 1.0f, -128.0f, 128.0f)) changed = true;
+            ImGui::PopID();
+        }
+        ImGui::TextWrapped("Legacy hooks are kept for older editor data; active boss grips are in section 6.");
+    }
+    if (changed) {
+        battleEditorDirty = true;
+        if (liveBattleConfig.Valid()) {
+            boss.SetBattleSettings(liveBattleConfig);
+            arena.SetBattleSettings(liveBattleConfig);
+        }
+    }
+    if (!liveBattleConfig.Valid()) ImGui::TextColored(ImVec4(1, 0.35f, 0.35f, 1), "Invalid setting; change it back before saving");
+    if (ImGui::Button("Save TXT")) {
+        if (liveBattleConfig.Save()) { battleEditorDirty = false; strcpy_s(battleEditorMessage, "Saved bossbattle_stage1.txt"); }
+        else strcpy_s(battleEditorMessage, "Save failed: invalid values/path");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load TXT")) {
+        BossBattleSettings loaded;
+        if (loaded.Load()) { liveBattleConfig = loaded; ResetBossBattleFromEditor(); battleEditorDirty = false; strcpy_s(battleEditorMessage, "Loaded and restarted"); }
+        else strcpy_s(battleEditorMessage, "Load failed; current values kept");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Restart battle")) {
+        if (ResetBossBattleFromEditor()) strcpy_s(battleEditorMessage, "Battle restarted");
+        else strcpy_s(battleEditorMessage, "Fix invalid values first");
+    }
+    if (ImGui::Button("Restore defaults")) {
+        liveBattleConfig = BossBattleSettings{};
+        ResetBossBattleFromEditor();
+        battleEditorDirty = true;
+        strcpy_s(battleEditorMessage, "Defaults applied; Save TXT to persist");
+    }
+    ImGui::SameLine(); ImGui::TextUnformatted(battleEditorDirty ? "* Unsaved" : "Saved / unchanged");
+    ImGui::TextWrapped("%s", battleEditorMessage);
+    ImGui::End();
+}
+#endif
+
 
 // ------------------------------------------------------------------------
 // 【関数】InitStage()
@@ -63,6 +197,12 @@ void UpdateStage(void) {
     // 【F8】エディターで保存したtxtをゲーム中に読み直し、同じ配置から再テスト。
     // キー押しっぱなしによる連続リロードを防ぐためエッジ判定。
     char liveKeys[256] = {};Novice::GetHitKeyStateAll(liveKeys);
+#ifdef USE_IMGUI
+    // F9でエディターを閉じたり、再び表示したりできる。
+    const bool f9Now = liveKeys[DIK_F9] != 0;
+    if (f9Now && !f9Prev) showBattleEditor = !showBattleEditor;
+    f9Prev = f9Now;
+#endif
     const bool f8Now = liveKeys[DIK_F8] != 0;
     if (f8Now && !f8Prev) {
         BossBattleSettings next;
@@ -82,6 +222,13 @@ void UpdateStage(void) {
         armorExists[i] = boss.IsArmorAttached(i);
     }
     arena.SetBossArmorTargets(armorPoints, armorExists);
+    Vector2 extraBossPoints[Boss::kAccessoryGripCount];
+    bool extraBossEnabled[Boss::kAccessoryGripCount];
+    for (int i = 0; i < Boss::kAccessoryGripCount; ++i) {
+        extraBossPoints[i] = boss.GetAccessoryGripPoint(i);
+        extraBossEnabled[i] = boss.IsAccessoryGripEnabled(i);
+    }
+    arena.SetBossExtraTargets(extraBossPoints, extraBossEnabled);
     if (arena.Update()) {
         boss.SetBattleSettings(liveBattleConfig);
         boss.Initialize({ liveBattleConfig.bossSpawn.x,liveBattleConfig.bossSpawn.y });
@@ -105,7 +252,12 @@ void UpdateStage(void) {
     const int peelRequest = player.ConsumeArmorPeelRequest();
     if (peelRequest >= 0 && !boss.IsDefeated()) {
         // 【外装ヒット確認】本当に剥がれた場合だけプレイヤーのポーズを強調。
-        if (boss.TryPeelArmor(peelRequest)) player.OnArmorPeeled();
+        bool removed = false;
+        if (peelRequest < BossStage1::kArmorPlates)
+            removed = boss.TryPeelArmor(peelRequest);
+        else
+            removed = boss.TryPeelAccessory(peelRequest - BossStage1::kArmorPlates);
+        if (removed) player.OnArmorPeeled();
     }
     SetCameraFollowY(360.0f); // プレイヤーのジャンプ/ワイヤーでカメラが上に行かない
     if (player.IsDefeated() || stageCleared) return;
@@ -165,9 +317,6 @@ void UpdateStage(void) {
 }
 
 // ------------------------------------------------------------------------
-// 【関数】DrawStage()
-// 何をする？ 背景→ボス→プレイヤー→UIの順で画面を描く。後から描くものが前に出る。
-// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
 // ------------------------------------------------------------------------
 void DrawStage(void) {
     // 描画順：背景・杭 → ボス → プレイヤー・触手 → HUD。
@@ -195,14 +344,22 @@ void DrawStage(void) {
     Novice::ScreenPrintf(970, 134, "ARMOR %d/%d", boss.GetArmorPlates(), boss.GetMaxArmorPlates());
 
     // 【ゲームの流れ】操作を覚えるため、目的を画面上に常時短文で表示する。
-    if (boss.GetArmorPlates() > 0) {
-        Novice::ScreenPrintf(18, 145, "ARMOR: HIT ALL FOUR CORNER SCREWS WITH TENTACLES!");
+    // 攻略順：ジェット・パイプ → プロペラ3本 → 本体と目は残して弱点攻撃。
+    bool hasAccessory = false;
+    for (int i = 0; i < Boss::kAccessoryGripCount - 1; ++i) {
+        if (boss.IsAccessoryGripEnabled(i)) { hasAccessory = true; break; }
+    }
+    if (hasAccessory) {
+        Novice::ScreenPrintf(18, 145, "STEP 1: REMOVE JETS AND PIPES!");
+    }
+    else if (boss.GetArmorPlates() > 0) {
+        Novice::ScreenPrintf(18, 145, "STEP 2: REMOVE THREE PROPELLERS!");
     }
     else if (!boss.IsDefeated()) {
-        Novice::ScreenPrintf(18, 145, "GOAL 2: DODGE RUSH -> EXPOSE CORE -> ATTACK!");
+        Novice::ScreenPrintf(18, 145, "STEP 3: BODY AND EYE REMAIN! ATTACK THE EYE!");
     }
     else {
-        Novice::ScreenPrintf(18, 145, "COPTER DOWN!  STAGE CLEAR IN A MOMENT!");
+        Novice::ScreenPrintf(18, 145, "COPTER DOWN! STAGE CLEAR IN A MOMENT!");
     }
     // 【読みやすさ優先】技ごとに避け方を教える。予兆だけ1行表示、追加BOXゼロ。
     // 単調な攻撃ではなく「予兆を読む→対処を選ぶ」遊びにする。
@@ -262,6 +419,9 @@ void DrawStage(void) {
     case BossAttack::YoYo:attack = "YOYO";break;
     }
     Novice::ScreenPrintf(18, 189, "AI attack: %s, cycle: %d", attack, boss.GetAttackCount());
+#endif
+#ifdef USE_IMGUI
+    DrawBossBattleEditor();
 #endif
 }
 // ------------------------------------------------------------------------

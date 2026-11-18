@@ -41,6 +41,16 @@ struct BossBattleSettings {
     float yoyoRange = 490.0f;
     int yoyoDuration = 98, toyWarning = 34;
     int idleFrames = 30;
+    // ボス飛行AI。速度と目的地の変更間隔をゲーム中に調整できる。
+    float flightSpeed = 4.1f;
+    float flightSpeedPhase2 = 5.6f;
+    int flightInterval = 78;
+    int flightIntervalPhase2 = 55;
+    // 部位のグリップポイント。ボス中心からの相対座標（+Yが上）。
+    // 0=本体、1～3=プロペラ / 追加0～3=ジェット、4=パイプ、5=目
+    std::array<BattlePoint, 4> partGrips = { {{0,0},{-112,112},{0,148},{112,112}} };
+    std::array<BattlePoint, 6> accessoryGrips = { {{-132,-66},{-108,18},{129,25},{130,-73},{51,-115},{0,4}} };
+
     // 設定値が想定範囲内か確認する。壊れた設定を採用しないための判定。
     bool Valid() const {
         const auto inside = [](BattlePoint p) {
@@ -66,14 +76,26 @@ struct BossBattleSettings {
             topDuration >= 30 && topDuration <= 300 &&
             std::isfinite(yoyoRange) && yoyoRange >= 100 && yoyoRange <= 900 &&
             yoyoDuration >= 30 && yoyoDuration <= 300 && toyWarning >= 8 && toyWarning <= 180 &&
-            idleFrames >= 8 && idleFrames <= 180;
+            idleFrames >= 8 && idleFrames <= 180 &&
+            std::isfinite(flightSpeed) && flightSpeed >= 0.1f && flightSpeed <= 30.0f &&
+            std::isfinite(flightSpeedPhase2) && flightSpeedPhase2 >= 0.1f && flightSpeedPhase2 <= 35.0f &&
+            flightInterval >= 10 && flightInterval <= 360 &&
+            flightIntervalPhase2 >= 10 && flightIntervalPhase2 <= 360 &&
+            validGripPoints();
+    }
+    bool validGripPoints() const {
+        for (const BattlePoint& pt : partGrips)
+            if (!std::isfinite(pt.x) || !std::isfinite(pt.y) || pt.x < -320 || pt.x > 320 || pt.y < -320 || pt.y > 320) return false;
+        for (const BattlePoint& pt : accessoryGrips)
+            if (!std::isfinite(pt.x) || !std::isfinite(pt.y) || pt.x < -320 || pt.x > 320 || pt.y < -320 || pt.y > 320) return false;
+        return true;
     }
     // エディター設定をファイルへ保存する。
     bool Save(const char* path = kFilename) const {
         if (!Valid())return false;
         std::ofstream out(path, std::ios::trunc);
         if (!out)return false;
-        out << "PORTAL_BOSS_BATTLE_V2\n" << std::setprecision(9);
+        out << "PORTAL_BOSS_BATTLE_V3\n" << std::setprecision(9);
         out << "anchors " << anchorCount << '\n';
         for (int i = 0;i < anchorCount;++i) out << "anchor " << anchors[i].x << ' ' << anchors[i].y << '\n';
         out << "spawn " << bossSpawn.x << ' ' << bossSpawn.y << '\n';
@@ -85,6 +107,9 @@ struct BossBattleSettings {
         out << "top " << topInitialSpeed << ' ' << topDuration << '\n';
         out << "yoyo " << yoyoRange << ' ' << yoyoDuration << ' ' << toyWarning << '\n';
         out << "idle " << idleFrames << '\n';
+        out << "flight " << flightSpeed << ' ' << flightSpeedPhase2 << ' ' << flightInterval << ' ' << flightIntervalPhase2 << '\n';
+        for (const auto& pt : partGrips) out << "partGrip " << pt.x << ' ' << pt.y << '\n';
+        for (const auto& pt : accessoryGrips) out << "extraGrip " << pt.x << ' ' << pt.y << '\n';
         return out.good();
     }
 
@@ -95,8 +120,9 @@ struct BossBattleSettings {
         BossBattleSettings next;
         std::string word;
         const auto key = [&](const char* expected) { return bool(in >> word) && word == expected; };
-        if (!(in >> word) || (word != "PORTAL_BOSS_BATTLE_V1" && word != "PORTAL_BOSS_BATTLE_V2")) return false;
+        if (!(in >> word) || (word != "PORTAL_BOSS_BATTLE_V1" && word != "PORTAL_BOSS_BATTLE_V2" && word != "PORTAL_BOSS_BATTLE_V3")) return false;
         const bool legacy = word == "PORTAL_BOSS_BATTLE_V1";
+        const bool v3 = word == "PORTAL_BOSS_BATTLE_V3";
         if (!key("anchors") || !(in >> next.anchorCount) ||
             next.anchorCount < 1 || next.anchorCount > kMaxAnchors)return false;
         for (int i = 0;i < next.anchorCount;++i)
@@ -118,6 +144,11 @@ struct BossBattleSettings {
         if (!key("top") || !(in >> next.topInitialSpeed >> next.topDuration))return false;
         if (!key("yoyo") || !(in >> next.yoyoRange >> next.yoyoDuration >> next.toyWarning))return false;
         if (!key("idle") || !(in >> next.idleFrames))return false;
+        if (v3) {
+            if (!key("flight") || !(in >> next.flightSpeed >> next.flightSpeedPhase2 >> next.flightInterval >> next.flightIntervalPhase2)) return false;
+            for (auto& pt : next.partGrips) if (!key("partGrip") || !(in >> pt.x >> pt.y)) return false;
+            for (auto& pt : next.accessoryGrips) if (!key("extraGrip") || !(in >> pt.x >> pt.y)) return false;
+        }
         // 余分な値が入っている場合も不正として扱う。
         if (in >> word)return false;
         if (legacy) {
