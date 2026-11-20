@@ -10,7 +10,8 @@ class PortalPlayer {
 public:
     void Initialize(Vector2 position);
     // fixedCount個までは移動杭。それ以降はボスの外装取っ掛かり。
-    void Update(const PortalCommands& input, const Vector2* anchors, int anchorCount, int fixedCount = 4);
+    void Update(const PortalCommands& input, const Vector2* anchors,
+        int anchorCount, int fixedCount = 4, int breakableCount = 4);
     int ConsumeArmorPeelRequest();
     // 【外装フック】引っ張っている相手と張力を表示・ボスの姿勢変形に使う。
     bool IsPullingArmor() const { return armorPeelFrames_ > 0; }
@@ -40,11 +41,25 @@ public:
     bool TakeDamage(int damage, Vector2 source);
     int GetHp() const { return hp_; }
     static constexpr int kMaxHp = 100;
+    int GetMaxHp() const { return maxHp_; }
+    void SetMaxHp(int value) {
+        if (value < 1) value = 1;
+        const bool wasFull = hp_ >= maxHp_;
+        maxHp_ = value;
+        if (wasFull) hp_ = maxHp_;
+        else if (hp_ > maxHp_) hp_ = maxHp_;
+    }
+    void SetCurrentHpForEditor(int value) {
+        if (value < 0) value = 0;
+        hp_ = value > maxHp_ ? maxHp_ : value;
+    }
     bool IsDefeated() const { return hp_ <= 0; }
 
 private:
+    int maxHp_ = kMaxHp;
     void ReleaseAll();
-    int FindAnchor(Vector2 direction, const Vector2* anchors, int count, int fixedCount) const;
+    int FindAnchor(Vector2 direction, const Vector2* anchors,
+        int count, int fixedCount, int breakableCount) const;
     void StartSpin();
 
     Vector2 position_ = {}, velocity_ = {}, aim_ = { 1,0 };

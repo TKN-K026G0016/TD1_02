@@ -1,6 +1,6 @@
 #pragma once
-#include "vector2.h"
-#include "matrix.h"
+#include "Vector2.h"
+#include "Matrix.h"
 
 //頂点の数
 constexpr int kVertexNum = 4;

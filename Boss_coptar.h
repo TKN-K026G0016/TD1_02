@@ -8,7 +8,7 @@
 #include "BossStage1Tuning.h"
 #include "BossBattleSettings.h"
 
-// 第1ステージの行動AI。本体は白BOX、外装/弱点も数個のBOXだけで表現。
+// 第1ステージの行動AI。本体・プロペラ・ジェット・パイプ・目を分割画像で描画する。
 // StageがBossの実体を所有し、Player座標への読み取り専用ポインタを渡す。
 enum class BossState { Idle, Warning, Rush, Recovery, Dizzy, ArmorCurl, ArmorFalling, ArmorImpact, ArmorStun, WakeBlast, Press, Shot, Toy, Defeated };
 enum class BossAttack { Press, Shot, Rush, Top, YoYo };
@@ -20,12 +20,18 @@ public:
 	void Initialize(Vector2 spawnPos);
 	// ゲーム起動時/F8リロード時にエディターで調整した5技とフック位置を反映。
 // エディターで保存した戦闘設定を、このオブジェクトへ反映する。
-	void SetBattleSettings(const BossBattleSettings& config) { if (config.Valid())battleSettings_ = config; }
+	void SetBattleSettings(const BossBattleSettings& config) {
+		if (config.Valid()) {
+			battleSettings_ = config;
+			if (hp_ > GetMaxHp()) hp_ = GetMaxHp();
+		}
+	}
 	void SetTarget(const Vector2* playerPosition);
 	// 【AI入力】速度・地上/空中・ワイヤーの使用状況を受け取る。
 	// PlayerをBossに所有させない（既存のクラス分担を維持）。
 	void SetTargetMotion(Vector2 velocity, bool grounded, bool usingWire);
 	void Update();
+	void TriggerAttackForEditor(BossAttack attack); // GUIから直接攻撃テスト
 	void Draw() const;
 
 	// グラップルの綱も外装剥がしに使う。第2引数はその判定。
@@ -36,11 +42,16 @@ public:
 		bool isSpinHit = false, bool fromWireLaunch = false);
 	int TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitSource);
 	int GetHp() const { return hp_; }
+	int GetMaxHp() const { return battleSettings_.bossMaxHp; }
+	void SetCurrentHpForEditor(int value) {
+		if (IsDefeated()) return; // 撃破済み状態を数値変更だけで復活させない
+		hp_ = value < 1 ? 1 : (value > GetMaxHp() ? GetMaxHp() : value);
+	}
 	int GetArmorPlates() const { return armorPlates_; }
-	int GetMaxArmorPlates() const { return BossStage1::kArmorPlates; }
-	bool IsCoreExposed() const { return armorPlates_ == 0; }
+	int GetMaxArmorPlates() const { return BossStage1::kArmorPlates - 1; }
+	bool IsCoreExposed() const { return armorPlates_ == 0 && AllAccessoriesRemoved(); }
 	bool IsDefeated() const { return hp_ <= 0; }
-	bool IsEnraged() const { return hp_ <= kMaxHp / 2; }
+	bool IsEnraged() const { return hp_ * 100 <= GetMaxHp() * battleSettings_.phase2HpPercent; }
 	bool IsWeakPointOpen() const; // プレス硬直・ワイヤー回避後の失速中は弱点ダメージUP
 	bool IsDizzy() const { return state_ == BossState::Dizzy || state_ == BossState::ArmorStun; }
 	bool IsArmorStun() const { return state_ == BossState::ArmorStun; }
@@ -66,9 +77,16 @@ public:
 	float GetCoreHitRadius() const { return battleSettings_.coreRadius; }
 	// 外装用のボス本体グリップポイント。プレイヤーが直接ワイヤーで剥がせる。
 	// 【外装の取っ掛かり】3枚にそれぞれ照準ポイントを持たせる。
-	// 通常の杭とは違い、Jで引っかけてもプレイヤーを引き寄せず外装だけ剥がす。
+	// 到着時に外装を剥がし、プレイヤーもワイヤーで引き寄せる。
+	// 本体1点は移動用（破壊不可）。プロペラ3点だけを剥がせる。
 	bool IsArmorAttached(int plate) const;
 	Vector2 GetArmorGripPoint(int plate) const;
+	// ジェット4・パイプ1・目1。目は最後まで外れず弱点として残る。
+	static constexpr int kAccessoryGripCount = 6;
+	Vector2 GetAccessoryGripPoint(int index) const;
+	bool IsAccessoryGripEnabled(int index) const;
+	bool TryPeelAccessory(int index); // ジェット4個・パイプを引き剥がす。目は破壊不可
+	bool AllAccessoriesRemoved() const;
 	// プレイヤーがJでフックを引いている最中、板をたわませる
 	void SetArmorStrain(int plate, float progress);
 	bool TryPeelArmor(int plate); // ポイントを狙って触手で引いた時だけ外装を剥がす
@@ -89,7 +107,10 @@ private:
 	static constexpr int kMaxBullets = 12;
 
 	BossBattleSettings battleSettings_ = {};
-	Vector2 homePosition_ = {}, position_ = {}, rushStart_ = {};
+	Vector2 position_ = {}, flightDestination_ = {}, rushStart_ = {};
+	Vector2 flightVelocity_ = {}; // 通常時のふわっとした空中移動の慣性
+	int flightTimer_ = 0;       // 次の待機地点を選び直す間隔
+	int flightDirection_ = 1;   // 位置変更時の予備方向
 	const Vector2* targetPosition_ = nullptr;
 	BossState state_ = BossState::Idle;
 	BossAttack nextAttack_ = BossAttack::Shot;
@@ -106,12 +127,15 @@ private:
 	float armorFallVelocity_ = 0.0f;
 
 	bool wakeBlastPending_ = false; // 1フレームのみtrue
-	int armorPlates_ = BossStage1::kArmorPlates;
+	int armorPlates_ = BossStage1::kArmorPlates - 1;
 	int armorStrainPlate_ = -1; // 張力がかかっている板
 	float armorStrain_ = 0.0f;   // 0～1。既存BOXの角度だけ変える
 	int armorDamage_ = 0;  // 通常攻撃による揺れ/ダメージ演出用（外装は剥がれない）
 	bool armorAttached_[BossStage1::kArmorPlates] = { true, true, true, true };
 	Vector2 peeledPosition_[BossStage1::kArmorPlates] = {};
+	bool accessoryAttached_[kAccessoryGripCount - 1] = { true,true,true,true,true };
+	Vector2 detachedAccessoryPosition_[kAccessoryGripCount - 1] = {};
+	int detachedAccessoryFrames_[kAccessoryGripCount - 1] = {};
 	int peeledFrames_[BossStage1::kArmorPlates] = {}; // 外装破壊時だけBOX一枚が飛ぶ
 	int hitCooldown_ = 0;
 	int hitstop_ = 0; // ボスだけ停止。
@@ -127,6 +151,7 @@ private:
 	int targetStillFrames_ = 0;
 	BossAttack previousAttack_ = BossAttack::Press;
 	unsigned int aiRandomState_ = 0x9E3779B9u;
+	int attackStaleness_[5] = {}; // 長く使っていない攻撃を少し優先する
 	// 【プレイヤー攻撃への反応】追加の描画は使わない。
 	int normalComboHits_ = 0;
 	int normalComboTimer_ = 0;
@@ -139,7 +164,7 @@ private:
 	float rushTargetY_ = BossStage1::kRushGroundY; // 地上突進専用：高さ固定
 	float rushTargetX_ = 0.0f; // 【突進の狙い】予兆終了時に固定。追尾し続けない
 	float pressTargetX_ = 0.0f, pressFallSpeed_ = 0.0f;
-	Vector2 pressReturnStart_ = {};
+	Vector2 pressReturnStart_ = {}, pressReturnDestination_ = {};
 
 	// コマ・ヨーヨーを共通の物理オブジェクト一個で表現する。
 	Vector2 toyPosition_ = {}, toyVelocity_ = {};
@@ -149,7 +174,14 @@ private:
 	float toyOriginX_ = 0.0f; // コマが一往復したら帰還する判定に使う
 	float toyAimY_ = 150.0f; // ヨーヨーが狙う高さ（攻撃開始時に固定）
 	bool toyHasHitPlayer_ = false;
+	// コマは「落下→走行→壁で反射→発射地点へ帰還」で制御する。
+	enum class TopPhase { Drop, Roll, Return };
+	TopPhase topPhase_ = TopPhase::Drop;
+	int topElapsed_ = 0;
+	float topLaunchX_ = 0.0f;
 
+
+	void UpdateFlight(); // 予兆・攻撃以外の空中移動
 	void ChangeState(BossState next);
 	void BeginArmorRebuild(); // ネジ4本・外装を元通りにし、吹き飛ばしを開始
 

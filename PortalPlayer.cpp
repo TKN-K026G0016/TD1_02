@@ -23,7 +23,7 @@ void PortalPlayer::Initialize(Vector2 position) {
     grappleAge_ = 0; grappleLastDistance_ = 0.0f;
     armorPeelFrames_ = 0; armorPeelTarget_ = -1; armorPeelRequest_ = -1; armorTetherSlot_ = -1;
     armorPullFailFrames_ = 0; normalAttackFrames_ = 0; normalAttackDirection_ = { 1.0f,0.0f };
-    spinFrames_ = 0; hurtFrames_ = 0; hitConfirmFrames_ = 0; hp_ = kMaxHp;
+    spinFrames_ = 0; hurtFrames_ = 0; hitConfirmFrames_ = 0; hp_ = maxHp_;
     sourceKnockX_ = 0.0f; sourceKnockHold_ = 0; sourceAirDownUsed_ = false;
     jumpCutArmed_ = false;
     castPulse_ = landingBounce_ = gripStretch_ = bodyLean_ = 0.0f;
@@ -55,11 +55,14 @@ void PortalPlayer::ReleaseAll() {
 // 見た目もロック中のみ緑/白の表示になるので、Jを押す前に結果が分かる。
 // A/D移動だけならUpdate側でFindAnchorを呼ばない（右スティックで狙う）。
 // ================================================================
-int PortalPlayer::FindAnchor(Vector2 direction, const Vector2* anchors, int count, int fixedCount) const {
+int PortalPlayer::FindAnchor(Vector2 direction, const Vector2* anchors,
+    int count, int fixedCount, int breakableCount) const {
     if (anchors == nullptr || count <= 0) return -1;
     const Vector2 aimDir = Unit(direction);
     int best = -1;
     float bestScore = 100000.0f;
+    int bestBoss = -1;
+    float bestBossScore = 100000.0f;
     for (int i = 0;i < count;++i) {
         if (regripLockFrames_ > 0 && i == lastLaunchedAnchor_) continue;
         const Vector2 delta = Sub(anchors[i], position_);
@@ -74,20 +77,37 @@ int PortalPlayer::FindAnchor(Vector2 direction, const Vector2* anchors, int coun
             PortalConfig::kAnchorLockSideMin, PortalConfig::kAnchorLockSideMax);
         // ボス外装のフックは、固定杭より意図的に照準しないとロックしない。
         // 通常攻撃がボスの黄色い3点へ勝手に吸われるのを防ぐ。
-        const bool isArmor = i >= fixedCount;
-        const float requiredDot = isArmor ? PortalConfig::kArmorAimDot : PortalConfig::kAnchorAimDot;
+        const bool isBoss = i >= fixedCount;
+        const bool isBreakable = isBoss && i < fixedCount + breakableCount;
+        const float requiredDot = isBoss ? PortalConfig::kArmorAimDot : PortalConfig::kAnchorAimDot;
         // ボス外装だけは少し広い補正。固定杭の誤グリップ判定は据え置く。
-        const float allowedSide = isArmor ? PortalConfig::kArmorAimSideMax : tolerance;
+        const float allowedSide = isBoss ? PortalConfig::kArmorAimSideMax : tolerance;
         if (alignment<requiredDot || sideways>allowedSide) continue;
         // ピッタリ狙えたポイントを優先。同一直線上なら近い方を選ぶ。
         // 【四隅ネジ】遠いネジをぴったり狙ったのに近い別のネジに吸われないようにする。
         // ネジは角度を優先、移動用杭は距離も考慮する。
-        float score = isArmor ? (sideways * 7.0f + distance * 0.02f)
+        float score = isBoss ? (sideways * 7.0f + distance * 0.02f)
             : (sideways * 2.1f + distance * 0.16f);
+        // 本体→プロペラ→目の順でポイントを解放。
+        // 破壊可能な部位が狙える場合、その他のボス部品より先に選択する。
+        if (isBoss && !isBreakable) score += 120.0f;
         if (i == selectedAnchor_) score -= 12.0f; // ロック対象が毎フレーム振れないように
-        if (score < bestScore) { bestScore = score;best = i; }
+        if (isBoss) {
+            if (score < bestBossScore) { bestBossScore = score; bestBoss = i; }
+        }
+        else if (score < bestScore) { bestScore = score; best = i; }
     }
-    return best;
+    // 目標方向が重なるか、画面上で近い場合はボス側を優先する。
+    if (bestBoss < 0) return best;
+    if (best < 0) return bestBoss;
+    const Vector2 toBoss = Sub(anchors[bestBoss], position_);
+    const Vector2 toScene = Sub(anchors[best], position_);
+    const float bossAngle = std::fabs(toBoss.x * aimDir.y - toBoss.y * aimDir.x) /
+        (Length(toBoss) + 0.001f);
+    const float sceneAngle = std::fabs(toScene.x * aimDir.y - toScene.y * aimDir.x) /
+        (Length(toScene) + 0.001f);
+    const bool overlapping = Length(Sub(anchors[bestBoss], anchors[best])) < 90.0f;
+    return (overlapping || bossAngle <= sceneAngle + 0.035f) ? bestBoss : best;
 }
 
 // 空中で右スティックを倒すと回転攻撃。キーボードのJも従来通り。
@@ -124,7 +144,8 @@ void PortalPlayer::StartSpin() {
     castPulse_ = 1.0f;
 }
 
-void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, int anchorCount, int fixedCount) {
+void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
+    int anchorCount, int fixedCount, int breakableCount) {
     // ================================================================
     // 【旧版互換】現在はネジ接続時に即座に取り外すので通常は通らない。
     // 【外装剥がしの詰み防止】
@@ -184,7 +205,7 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
     aim_ = Length(input.aim) > 0.05f ? Unit(input.aim) : Vector2{ static_cast<float>(facing_),0 };
     // 【攻撃優先】右スティックの最初の入力は、ロックがあっても必ず触手攻撃。
     // これにより「全部グラップルになって攻撃できない」問題を防ぐ。
-    selectedAnchor_ = input.aimExplicit ? FindAnchor(aim_, anchors, anchorCount, fixedCount) : -1;
+    selectedAnchor_ = input.aimExplicit ? FindAnchor(aim_, anchors, anchorCount, fixedCount, breakableCount) : -1;
     if (input.attack) {
         attackBufferFrames_ = PortalConfig::kAttackBufferFrames;
         attackIntentTarget_ = input.stickAction ? -1 : selectedAnchor_;
@@ -322,26 +343,10 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
                 const Vector2* anchor = canGrip ? &anchors[attackIntentTarget_] : nullptr;
                 const Vector2 shotDirection = anchor ? Unit(Sub(*anchor, position_)) : aim_;
                 const Vector2 origin = Sub(position_, Mul(shotDirection, 66.0f));
-                // 【J自動振り分け】同じボタンで3種類の行動。
-                // 明確に外装ポイントを狙う→外装剥がし（プレイヤーは移動しない）。
-                // 明確に固定杭を狙う→ワイヤー移動。それ以外→通常/空中攻撃。
-                const bool armorTarget = canGrip && attackIntentTarget_ >= fixedCount;
-                if (armorTarget) {
-                    // 【新しい四隅ネジ】狙ってフックに届いた瞬間、1本のネジが外れる。
-                    // J長押し・緑ゲージは廃止。触手は短い攻撃アニメーションだけ残す。
-                    gates_[slot].StartArmorTether(origin, *anchor);
-                    gates_[slot].Release();
-                    armorPeelRequest_ = attackIntentTarget_ - fixedCount;
-                    armorPeelFrames_ = 0;
-                    armorPeelTarget_ = -1;
-                    armorTetherSlot_ = -1;
-                    // 引っかけた勢いをプレイヤーへ返さない。
-                    // 攻撃アニメーションだけを継続し、移動速度には触れない。
-                }
-                else {
-                    gates_[slot].Start(origin, shotDirection, anchor);
-                }
-                if (anchor && !armorTarget) {
+                // 背景杭もボスのポイントもワイヤー移動。剥離は到着時に起こす。
+                // これで本体とプロペラを掴んでもプレイヤー自身が引き寄せられる。
+                gates_[slot].Start(origin, shotDirection, anchor);
+                if (anchor) {
                     // 【射出方向の固定】Jを押してつないだ瞬間の杭方向を保存。
                     // グラップル中のA/D入力で、射出方向を変更する処理は一切行わない。
                     grappleTravelDirection_ = shotDirection;
@@ -376,6 +381,12 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
     }
     if (velocity_.y <= 0.0f) jumpCutArmed_ = false;
 
+    // ボスのパーツは毎フレーム動く。接続済みのワイヤー先端も追従させる。
+    if (activeGripAnchor_ >= fixedCount && activeGripAnchor_ < anchorCount && anchors &&
+        anchors[activeGripAnchor_].x < 10000.0f) {
+        for (auto& gate : gates_) if (gate.IsGripping())
+            gate.SetGripTarget(anchors[activeGripAnchor_]);
+    }
     for (auto& gate : gates_) gate.Update();
     bool gripping = IsGripping();
     bool justLaunched = false;
@@ -419,6 +430,11 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
             grappleLastDistance_ = distance;
 
             if (arriving) {
+                // ボスの装甲/プロペラへワイヤーで到着した場合だけ剥がす。
+                // 目とジェット・パイプはグラップル移動専用。
+                if (activeGripAnchor_ >= fixedCount &&
+                    activeGripAnchor_ < fixedCount + breakableCount)
+                    armorPeelRequest_ = activeGripAnchor_ - fixedCount;
                 // 【最重要】射出方向を新たに設定しない。
                 // 接近直前の速度をそのまま採用し、速さを1px/Fだけ足す。
                 // 旧実装の「固定x速度・上向き最低速度・接続方向への加算」を廃止。
@@ -452,7 +468,7 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors, i
         }
     }
     if (!gripping && !justLaunched) {
-       // const bool moving = std::fabs(input.move) > 0.08f;
+        // const bool moving = std::fabs(input.move) > 0.08f;
         if (!grounded_ && launchMomentumFrames_ > 0) {
             // 【元の反動方式へ】ワイヤー射出後は残りの横速度を短時間維持。
             // 元コードの knockX と同じく0.92/Fで減衰し、A/Dは通常移動の入力。

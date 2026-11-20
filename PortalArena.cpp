@@ -22,6 +22,7 @@ void PortalArena::Initialize() {
     player_.Initialize({ 420.0f,110.0f });
     frame_ = 0;connected_ = false;mashPulse_ = false;
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) { armorPointEnabled_[i] = false;armorPoints_[i] = {}; }
+    for (int i = 0;i < kExtraBossPoints;++i) { extraPointEnabled_[i] = false;extraPoints_[i] = {}; }
 }
 // ------------------------------------------------------------------------
 // 【関数】PortalArena::SetBattleSettings()
@@ -41,6 +42,9 @@ void PortalArena::SetBattleSettings(const BossBattleSettings& settings) {
 void PortalArena::SetBossArmorTargets(const Vector2 points[BossBattleSettings::kArmorHooks], const bool enabled[BossBattleSettings::kArmorHooks]) {
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) { armorPointEnabled_[i] = enabled[i];armorPoints_[i] = points[i]; }
 }
+void PortalArena::SetBossExtraTargets(const Vector2 points[kExtraBossPoints], const bool enabled[kExtraBossPoints]) {
+    for (int i = 0; i < kExtraBossPoints; ++i) { extraPointEnabled_[i] = enabled[i];extraPoints_[i] = points[i]; }
+}
 // ------------------------------------------------------------------------
 // 【関数】PortalArena::Update()
 // 何をする？ 1フレーム分の入力・物理・状態遷移を進める。描画ではなく内部状態を更新する。
@@ -55,12 +59,19 @@ bool PortalArena::Update() {
     // 【ターゲット一覧】設定された移動用杭＋ボス外装の四隅ネジ4点。
     // 取り外した外装は巨大な距離へ追い出して選択できなくする。
     // 【注目】【目標配列】前半＝移動杭、後半＝ボスのネジ。固定杭の個数を境界としてPlayerに渡す。
-    Vector2 points[kMaxAnchors + BossBattleSettings::kArmorHooks] = {};
+    Vector2 points[kMaxAnchors + BossBattleSettings::kArmorHooks + kExtraBossPoints] = {};
     for (int i = 0;i < anchorCount_;++i) points[i] = anchors_[i];
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) points[anchorCount_ + i] = armorPointEnabled_[i]
         ? armorPoints_[i] : Vector2{ 100000.0f,100000.0f };
-    // 【注目】【プレイヤー更新】敵に倒されていなければ物理・攻撃・触手を進める。
-    if (!player_.IsDefeated()) player_.Update(commands, points, anchorCount_ + BossBattleSettings::kArmorHooks, anchorCount_);
+    // ジェットとパイプも部位剥がしの対象として数える。
+    // 目と本体はBoss側で破壊不可にしている。
+    // 【プレイヤー更新】敵に倒されていなければ物理・攻撃・触手を進める。
+    for (int i = 0; i < kExtraBossPoints; ++i)
+        points[anchorCount_ + BossBattleSettings::kArmorHooks + i] = extraPointEnabled_[i]
+        ? extraPoints_[i] : Vector2{ 100000.0f,100000.0f };
+    if (!player_.IsDefeated()) player_.Update(commands, points,
+        anchorCount_ + BossBattleSettings::kArmorHooks + kExtraBossPoints,
+        anchorCount_, BossBattleSettings::kArmorHooks + kExtraBossPoints);
     ++frame_;
     return false;
 }
@@ -96,12 +107,27 @@ void PortalArena::DrawWorld() const {
         PortalDraw::Box({ p.x,p.y + 13.0f }, 24, 3, 0xFFFFFFFF);
         PortalDraw::Box({ p.x,p.y - 13.0f }, 24, 3, 0xFFFFFFFF);
     }
-    // インデックスを確認して範囲外アクセスを防ぐ。
     const int idx = player_.GetSelectedAnchor();
-    if (idx >= 0 && idx < anchorCount_ + BossBattleSettings::kArmorHooks) {
-        if (idx < anchorCount_ || armorPointEnabled_[idx - anchorCount_]) {
-            const Vector2 target = idx < anchorCount_ ? anchors_[idx] : armorPoints_[idx - anchorCount_];
-            PortalDraw::Line(player_.GetPosition(), target, 0xB5F6C966);
+    const int armorEnd = anchorCount_ + BossBattleSettings::kArmorHooks;
+    const int total = armorEnd + kExtraBossPoints;
+    if (idx >= 0 && idx < total) {
+        Vector2 p = {};
+        bool valid = false;
+        if (idx < anchorCount_) { p = anchors_[idx]; valid = true; }
+        else if (idx < armorEnd) {
+            const int part = idx - anchorCount_;
+            p = armorPoints_[part];valid = armorPointEnabled_[part];
+        }
+        else {
+            const int part = idx - armorEnd;
+            p = extraPoints_[part];valid = extraPointEnabled_[part];
+        }
+        if (valid) {
+            PortalDraw::Line(player_.GetPosition(), p, 0xB5F6C966);
+            if (idx >= armorEnd) {
+                PortalDraw::Box({ p.x - 18.0f,p.y }, 3.0f, 34.0f, 0xFFFFFFFF);
+                PortalDraw::Box({ p.x + 18.0f,p.y }, 3.0f, 34.0f, 0xFFFFFFFF);
+            }
         }
     }
 }
@@ -142,7 +168,10 @@ void PortalArena::DrawHUD() const {
         player_.IsSpinning() ? "AIR SPIN ATTACK" :
         player_.GetSelectedAnchor() >= 0 ? "LOCK: HOLD RIGHT STICK -> AUTO GRAPPLE" : "RIGHT STICK: INSTANT TENTACLE ATTACK";
     const int target = player_.GetSelectedAnchor();
-    if (target >= anchorCount_ && !player_.IsPullingArmor()) status = "SCREW: AIM AT THE CORNER AND LOCK";
+    if (target >= anchorCount_ && target < anchorCount_ + BossBattleSettings::kArmorHooks)
+        status = "BOSS PART: GRAPPLE TO PEEL / LAUNCH";
+    else if (target >= anchorCount_ + BossBattleSettings::kArmorHooks)
+        status = "BOSS POINT: GRAPPLE TO MOVE";
     Novice::ScreenPrintf(18, 52, "%s  /  %s", connected_ ? "GAMEPAD" : "KEYBOARD", status);
     if (player_.IsPullingArmor()) {
         const float progress = player_.GetArmorPullProgress();
