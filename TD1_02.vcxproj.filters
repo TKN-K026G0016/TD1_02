@@ -220,7 +220,6 @@
     <ClInclude Include="C:\KamataEngine\DirectXGame\2d\ImGuiManager.h">
       <Filter>KamataEngine\Include</Filter>
     </ClInclude>
-    <ClInclude Include="Common.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="Vector2.h" />
     <ClInclude Include="Bgm.h">
@@ -302,6 +301,15 @@
     <ClInclude Include="MovingPlatform.h">
       <Filter>Map</Filter>
     </ClInclude>
+    <ClInclude Include="CreatorGameRuntime.h">
+      <Filter>Tool</Filter>
+    </ClInclude>
+    <ClInclude Include="CreatorRuntimeData.h">
+      <Filter>Tool</Filter>
+    </ClInclude>
+    <ClInclude Include="Editor\Map.h" />
+    <ClInclude Include="Editor\stage01.stage.creator_runtime.h" />
+    <ClInclude Include="Editor\StageEditor.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="TD1_02.rc" />

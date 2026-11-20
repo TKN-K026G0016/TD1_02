@@ -41,9 +41,22 @@ public:
     bool TakeDamage(int damage, Vector2 source);
     int GetHp() const { return hp_; }
     static constexpr int kMaxHp = 100;
+    int GetMaxHp() const { return maxHp_; }
+    void SetMaxHp(int value) {
+        if (value < 1) value = 1;
+        const bool wasFull = hp_ >= maxHp_;
+        maxHp_ = value;
+        if (wasFull) hp_ = maxHp_;
+        else if (hp_ > maxHp_) hp_ = maxHp_;
+    }
+    void SetCurrentHpForEditor(int value) {
+        if (value < 0) value = 0;
+        hp_ = value > maxHp_ ? maxHp_ : value;
+    }
     bool IsDefeated() const { return hp_ <= 0; }
 
 private:
+    int maxHp_ = kMaxHp;
     void ReleaseAll();
     int FindAnchor(Vector2 direction, const Vector2* anchors,
         int count, int fixedCount, int breakableCount) const;

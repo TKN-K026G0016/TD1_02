@@ -16,6 +16,7 @@
 #include <cstring>
 #include "BossBattleSettings.h"
 #include "PortalMath.h"
+#include "CreatorGameRuntime.h"
 #ifdef USE_IMGUI
 #include <imgui.h>
 #endif
@@ -25,6 +26,7 @@
 // 現在は左スティックで移動、右スティックで8方向触手攻撃。Jはキーボード用。AIはBoss、プレイヤーはPortalArenaが管理。
 // 画面の派手さは運動/停止/画面揺れを使い、オブジェクト描画は最小限。
 // ================================================================
+static CreatorGameRuntime::Runtime creatorRuntime;
 static Boss boss;
 static PortalArena arena;
 static bool stageCleared = false;
@@ -44,6 +46,7 @@ static bool ResetBossBattleFromEditor() {
     arena.SetBattleSettings(liveBattleConfig);
     boss.SetBattleSettings(liveBattleConfig);
     arena.Initialize();
+    arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
     arena.SetBattleSettings(liveBattleConfig);
     boss.Initialize({ liveBattleConfig.bossSpawn.x, liveBattleConfig.bossSpawn.y });
     boss.SetTarget(&arena.GetPlayerPosition());
@@ -59,6 +62,16 @@ static void DrawBossBattleEditor() {
     ImGui::SetNextWindowSize(ImVec2(425, 625), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Stage 1 - Boss Battle Editor", &showBattleEditor)) { ImGui::End(); return; }
     ImGui::TextUnformatted("Edit while playing / F8: reload saved settings");
+    if (ImGui::CollapsingHeader("Creator editor integration")) {
+        ImGui::Checkbox("Show stage tiles", &creatorRuntime.showStage);
+        ImGui::Checkbox("Show collision outlines", &creatorRuntime.showCollision);
+        ImGui::Checkbox("Show UI widgets", &creatorRuntime.showCreatorUI);
+        ImGui::Checkbox("Show effect preview", &creatorRuntime.showEffects);
+        ImGui::Checkbox("Show animation preview", &creatorRuntime.showAnimation);
+        ImGui::Checkbox("Show gimmick preview", &creatorRuntime.showGimmicks);
+        if (ImGui::Button("Reload creator stage + hitboxes")) creatorRuntime.Reload();
+        ImGui::TextWrapped("F8 reloads TXT and stage data. Animation/effect/UI/gimmick preview uses generated CreatorRuntimeData.h (rebuild after export).");
+    }
     ImGui::Separator();
     bool changed = false;
     auto valueF = [&](const char* label, float* value, float min, float max) {
@@ -67,6 +80,33 @@ static void DrawBossBattleEditor() {
     auto valueI = [&](const char* label, int* value, int min, int max) {
         if (ImGui::SliderInt(label, value, min, max)) changed = true;
         };
+    if (ImGui::CollapsingHeader("0. HP and damage", ImGuiTreeNodeFlags_DefaultOpen)) {
+        valueI("Boss maximum HP", &liveBattleConfig.bossMaxHp, 1, 10000);
+        valueI("Player maximum HP", &liveBattleConfig.playerMaxHp, 1, 1000);
+        valueI("Phase 2 trigger HP (%)", &liveBattleConfig.phase2HpPercent, 1, 99);
+        ImGui::Separator();
+        valueI("Normal attack damage", &liveBattleConfig.normalDamage, 0, 500);
+        valueI("Spin attack damage", &liveBattleConfig.spinDamage, 0, 500);
+        valueI("Grapple damage", &liveBattleConfig.grappleDamage, 0, 500);
+        valueI("Mash damage / hit", &liveBattleConfig.mashDamage, 0, 500);
+        valueI("Player received damage (%)", &liveBattleConfig.incomingDamagePercent, 0, 500);
+        ImGui::TextWrapped("Max HP is fully applied on Restart battle. Attack damage updates immediately.");
+    }
+    if (ImGui::CollapsingHeader("8. Test controls")) {
+        int bossHpEditor = boss.GetHp();
+        int playerHpEditor = arena.GetPlayer().GetHp();
+        ImGui::Text("Boss: %d / %d", bossHpEditor, boss.GetMaxHp());
+        ImGui::Text("Player: %d / %d", playerHpEditor, arena.GetPlayer().GetMaxHp());
+        if (ImGui::SliderInt("Set boss current HP", &bossHpEditor, 1, boss.GetMaxHp()))
+            boss.SetCurrentHpForEditor(bossHpEditor);
+        if (ImGui::SliderInt("Set player current HP", &playerHpEditor, 1, arena.GetPlayer().GetMaxHp()))
+            arena.GetPlayer().SetCurrentHpForEditor(playerHpEditor);
+        if (ImGui::Button("Set boss HP near phase 2")) {
+            const int threshold = (boss.GetMaxHp() * liveBattleConfig.phase2HpPercent) / 100;
+            boss.SetCurrentHpForEditor(threshold < 1 ? 1 : threshold);
+        }
+        ImGui::TextWrapped("Current HP test only. To trigger phase 2, damage the boss after setting HP. Saved TXT stores maximum HP and damage.");
+    }
     if (ImGui::CollapsingHeader("1. Boss movement", ImGuiTreeNodeFlags_DefaultOpen)) {
         valueF("Fly speed", &liveBattleConfig.flightSpeed, 0.1f, 15.0f);
         valueF("Fly speed (phase 2)", &liveBattleConfig.flightSpeedPhase2, 0.1f, 20.0f);
@@ -91,7 +131,16 @@ static void DrawBossBattleEditor() {
     }
     if (ImGui::CollapsingHeader("4. Top and yoyo")) {
         valueF("Top speed", &liveBattleConfig.topInitialSpeed, 3, 45);
-        valueI("Top duration", &liveBattleConfig.topDuration, 30, 300);
+        valueI("Top duration (legacy)", &liveBattleConfig.topDuration, 30, 300);
+        valueF("Top gravity", &liveBattleConfig.topGravity, 0.1f, 8.0f);
+        valueF("Top floor bounce", &liveBattleConfig.topBounceHeight, 0.0f, 30.0f);
+        valueF("Top return acceleration", &liveBattleConfig.topReturnAccel, 0.005f, 0.5f);
+        valueF("Top hit radius", &liveBattleConfig.topHitRadius, 20.0f, 128.0f);
+        valueI("Top failsafe lifetime", &liveBattleConfig.topMaxLifetime, 180, 1800);
+        ImGui::TextWrapped("Top: DROP -> FLOOR ROLL -> ONE WALL BOUNCE -> RETURN. Old duration no longer cuts it short.");
+        if (ImGui::Button("Test Top NOW")) boss.TriggerAttackForEditor(BossAttack::Top);
+        ImGui::SameLine();
+        if (ImGui::Button("Test YoYo NOW")) boss.TriggerAttackForEditor(BossAttack::YoYo);
         valueF("Yoyo range", &liveBattleConfig.yoyoRange, 100, 900);
         valueI("Yoyo duration", &liveBattleConfig.yoyoDuration, 30, 300);
         valueI("Toy warning", &liveBattleConfig.toyWarning, 8, 180);
@@ -134,6 +183,7 @@ static void DrawBossBattleEditor() {
         if (liveBattleConfig.Valid()) {
             boss.SetBattleSettings(liveBattleConfig);
             arena.SetBattleSettings(liveBattleConfig);
+            arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
         }
     }
     if (!liveBattleConfig.Valid()) ImGui::TextColored(ImVec4(1, 0.35f, 0.35f, 1), "Invalid setting; change it back before saving");
@@ -174,8 +224,10 @@ void InitStage(void) {
     // 設定ファイルが無い場合は前回正常に読めた値／初期値で続行。
     // 【注目】【設定読込】エディターの設定が無い場合は既定値を使う。
     liveBattleConfig.Load();
+    creatorRuntime.Reload();
     // 【注目】【プレイヤー初期化】ボスより先に初期化して、プレイヤー位置への参照を有効にする。
     arena.Initialize();
+    arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
     arena.SetBattleSettings(liveBattleConfig);
     boss.SetBattleSettings(liveBattleConfig);
     boss.Initialize({ liveBattleConfig.bossSpawn.x,liveBattleConfig.bossSpawn.y });
@@ -212,6 +264,7 @@ void UpdateStage(void) {
     f8Prev = f8Now;
     if (reloadIndicatorFrames > 0)--reloadIndicatorFrames;
     if (reloadIndicatorFrames < 0)++reloadIndicatorFrames;
+    creatorRuntime.Update();
     // 【重要】ボス外装の四隅ネジ4点を移動杭とは別の目標として渡す。
     // 各ネジは右スティックで狙って接続すると外せる。プレイヤー自身はボスへ引き寄せられない。
     Vector2 armorPoints[BossStage1::kArmorPlates];
@@ -230,6 +283,7 @@ void UpdateStage(void) {
     }
     arena.SetBossExtraTargets(extraBossPoints, extraBossEnabled);
     if (arena.Update()) {
+        arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
         boss.SetBattleSettings(liveBattleConfig);
         boss.Initialize({ liveBattleConfig.bossSpawn.x,liveBattleConfig.bossSpawn.y });
         // 【注目】【重要：ポインタ】毎フレーム変わるプレイヤーの位置をボスAIへ渡す。
@@ -242,6 +296,8 @@ void UpdateStage(void) {
     }
     ++tutorialFrame;
     PortalPlayer& player = arena.GetPlayer();
+    if (creatorRuntime.showCollision && creatorRuntime.PlayerInHazard(player.GetPosition()) && (tutorialFrame % 45 == 0))
+        player.TakeDamage(6, player.GetPosition());
     // 【連打】攻撃が届かない距離でもスタン中は右スティック弾き直しでコアを殴れる。
     const bool mashPulse = arena.ConsumeMashPulse();
     if (boss.IsMashActive() && mashPulse) boss.RegisterMashHit();
@@ -294,9 +350,9 @@ void UpdateStage(void) {
         int damage = 0;
         // 【分岐表】現在の状態/攻撃種類に応じて、実行する処理を分ける。
         switch (attack) {
-        case PortalAttackKind::Normal:damage = PortalConfig::kNormalDamage;break;
-        case PortalAttackKind::Spin:damage = PortalConfig::kSpinDamage;break;
-        case PortalAttackKind::Grapple:damage = PortalConfig::kGrappleDamage;break;
+        case PortalAttackKind::Normal:damage = liveBattleConfig.normalDamage;break;
+        case PortalAttackKind::Spin:damage = liveBattleConfig.spinDamage;break;
+        case PortalAttackKind::Grapple:damage = liveBattleConfig.grappleDamage;break;
         case PortalAttackKind::None:break;
         }
         if (damage > 0 && boss.TakeDamage(damage,
@@ -311,36 +367,44 @@ void UpdateStage(void) {
         if (!boss.IsDefeated()) {
             Vector2 source = {};
             int hit = boss.TryHitPlayer(player.GetPosition(), 24.0f, &source);
-            if (hit > 0)player.TakeDamage(hit, source);
+            if (hit > 0) {
+                const int adjustedDamage = (hit * liveBattleConfig.incomingDamagePercent + 50) / 100;
+                if (adjustedDamage > 0) player.TakeDamage(adjustedDamage, source);
+            }
         }
     }
 }
 
 // ------------------------------------------------------------------------
+// 【関数】DrawStage()
+// 何をする？ 背景→ボス→プレイヤー→UIの順で画面を描く。後から描くものが前に出る。
+// 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
 // ------------------------------------------------------------------------
 void DrawStage(void) {
     // 描画順：背景・杭 → ボス → プレイヤー・触手 → HUD。
     // ボスの後に背景を描くとボスが隠れるため、この順序を守る。
     // 【注目】【描画順①】床・背景・杭を先に描く（最も奥）。
     arena.DrawWorld();
+    creatorRuntime.DrawWorld();
     // 【注目】【描画順②】ボスはプレイヤーより後ろに描く。
     boss.Draw();
     // 【注目】【描画順③】プレイヤーと触手は最後に描いて手前へ。
     arena.DrawPlayer();
     arena.DrawHUD();
+    creatorRuntime.DrawHUD();
     if (reloadIndicatorFrames > 0)Novice::ScreenPrintf(18, 210, "BOSS EDITOR DATA RELOADED (F8)");
     else if (reloadIndicatorFrames < 0)Novice::ScreenPrintf(18, 210, "NO VALID bossbattle_stage1.txt");
     // HPと外装は画面固定のBOX。文字もスクリーン座標なので描画数が増えない。
     const int playerHp = arena.GetPlayer().GetHp();
     const int bossHp = boss.GetHp();
     Novice::DrawBox(17, 92, 284, 15, 0, 0x222735FF, kFillModeSolid);
-    Novice::DrawBox(18, 93, static_cast<int>(282.0f * playerHp / PortalPlayer::kMaxHp), 13, 0,
+    Novice::DrawBox(18, 93, static_cast<int>(282.0f * playerHp / arena.GetPlayer().GetMaxHp()), 13, 0,
         0x46DBADFF, kFillModeSolid);
     Novice::DrawBox(974, 92, 286, 15, 0, 0x222735FF, kFillModeSolid);
-    Novice::DrawBox(975, 93, static_cast<int>(284.0f * bossHp / Boss::kMaxHp), 13, 0,
+    Novice::DrawBox(975, 93, static_cast<int>(284.0f * bossHp / boss.GetMaxHp()), 13, 0,
         boss.IsEnraged() ? 0xFF9A54FF : 0xD65B67FF, kFillModeSolid);
-    Novice::ScreenPrintf(18, 114, "PLAYER HP %d/%d", playerHp, PortalPlayer::kMaxHp);
-    Novice::ScreenPrintf(970, 114, "COPTER CORE HP %d/%d", bossHp, Boss::kMaxHp);
+    Novice::ScreenPrintf(18, 114, "PLAYER HP %d/%d", playerHp, arena.GetPlayer().GetMaxHp());
+    Novice::ScreenPrintf(970, 114, "COPTER CORE HP %d/%d", bossHp, boss.GetMaxHp());
     Novice::ScreenPrintf(970, 134, "ARMOR %d/%d", boss.GetArmorPlates(), boss.GetMaxArmorPlates());
 
     // 【ゲームの流れ】操作を覚えるため、目的を画面上に常時短文で表示する。

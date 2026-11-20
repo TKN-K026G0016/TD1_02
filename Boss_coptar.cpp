@@ -1,3 +1,6 @@
+// 【このファイルの役割】Boss_coptar.cpp — コプターの行動・外装・戦闘AI
+// 5種類の攻撃、4ネジ解除、墜落、連打スタン、第2段階、被弾、撃破を管理する。
+
 #include "Boss_coptar.h"
 #include "Camera.h"
 #include "PortalDraw.h"
@@ -16,9 +19,14 @@ namespace {
         return a < b ? (a + step > b ? b : a + step) : (a - step < b ? b : a - step);
     }
 }
+// 各画像の見えている絵の中心が、機体のどこに配置されるか（+Yが上）。
+// PNGは送付されたform1直下のファイルをそのまま使用。proto/photoは使用しない。
 namespace {
+    // 画像ごとの配置は完成絵 boss_new.png（512x512）から測定した左上座標。
+    // 完成絵の配置座標を基準に、各パーツPNGを等倍で重ねる。
+    // 各PNGの透明余白も含めた位置なので、分割しても完成絵に重なる。
     struct BossPartArt { const char* path; float left; float top; int width; int height; };
-    constexpr float kArtScale = 0.5f;
+    constexpr float kArtScale = 1.0f; // 送付PNGは等倍表示。カメラ倍率は別管理。
     // 本体 / プロペラ1〜3（本体と目は外れない）
     const BossPartArt kBreakArt[4] = {
         {"./resources/texture/boss/form1/boss_body.png",79,111,256,256},
@@ -56,14 +64,29 @@ namespace {
             PortalDraw::Box(center, 22.0f, 22.0f, 0xA9ACC6FF);
         }
     }
+    // コマ・ヨーヨーは既存の専用PNGを原寸表示する。
+    // 画像はキャッシュし、毎フレームLoadTextureを呼ばない。
+    void DrawToySprite(const char* path, Vector2 center, int pixelSize, float angle, int& handle) {
+        if (handle == -2) handle = Novice::LoadTexture(path);
+        if (handle < 0) {
+            PortalDraw::RotatedBox(center, static_cast<float>(pixelSize) * 0.5f,
+                static_cast<float>(pixelSize) * 0.5f, angle, 0xC9C4DAFF);
+            return;
+        }
+        const Vector2i screen = PortalDraw::ToScreen(center);
+        const float scale = GetCameraZoom(); // 1.0倍が基準。256px/128pxのまま描画。
+        const int size = static_cast<int>(pixelSize * scale);
+        Novice::DrawSprite(screen.x - size / 2, screen.y - size / 2,
+            handle, scale, scale, -angle, 0xFFFFFFFF);
+    }
 }
 
 // オブジェクトを使い始めるときに値を初期状態へ戻す。リトライ時にも重要。
 void Boss::Initialize(Vector2 spawnPos) {
-    homePosition_ = position_ = spawnPos;
+    position_ = flightDestination_ = spawnPos;
     flightVelocity_ = {}; flightTimer_ = 0; flightDirection_ = 1;
     targetPosition_ = nullptr; // Stage::InitStageがあとからSetTargetで接続する
-    hp_ = kMaxHp;
+    hp_ = GetMaxHp();
     armorRebuilt_ = false; rebuildOnWake_ = false; mashCount_ = 0; armorFallVelocity_ = 0.0f;
     armorPlates_ = BossStage1::kArmorPlates - 1;
     for (int i = 0; i < kAccessoryGripCount - 1; ++i) {
@@ -80,6 +103,7 @@ void Boss::Initialize(Vector2 spawnPos) {
     wakeBlastPending_ = false;
     targetVelocity_ = {};targetGrounded_ = true;targetUsingWire_ = false;targetStillFrames_ = 0;
     previousAttack_ = BossAttack::Press; aiRandomState_ = 0x9E3779B9u;
+    for (int i = 0; i < 5; ++i) attackStaleness_[i] = 0;
     normalComboHits_ = normalComboTimer_ = spinCounterCooldown_ = 0;
     rushDirection_ = -1;
     wireUsedDuringRush_ = rushHitPlayer_ = rushDodgeStunPending_ = false;
@@ -234,6 +258,11 @@ void Boss::ChooseAttack() {
         // 【注目】【繰り返し防止】直前と2回前の技に点数ペナルティをかける。
         score[prev] -= BossStage1::kAIRepeatPenalty;
         score[older] -= BossStage1::kAIPreviousTwoPenalty;
+        // 地上にいるプレイヤー相手でもヨーヨーが出なくならないようにする。
+        // 長期間使っていない技ほど少し優先する（5種類すべてが出る）。
+        for (int i = 0; i < 5; ++i) {
+            score[i] += Clamp(static_cast<float>(attackStaleness_[i]) * 11.0f, 0.0f, 70.0f);
+        }
         int best = 0;
         float bestValue = -100000.0f;
         for (int i = 0;i < 5;++i) {
@@ -254,6 +283,10 @@ void Boss::ChooseAttack() {
     }
     previousAttack_ = lastAttack_;
     lastAttack_ = nextAttack_;
+    for (int i = 0; i < 5; ++i) {
+        if (i == static_cast<int>(nextAttack_)) attackStaleness_[i] = 0;
+        else if (attackStaleness_[i] < 9) ++attackStaleness_[i];
+    }
     ++attackCount_;
 }
 // ボスの行動状態を切り替え、状態ごとの開始演出・タイマーを初期化する。
@@ -263,7 +296,11 @@ void Boss::ChangeState(BossState next) {
     // 【注目】【状態別の開始処理】新状態になった瞬間に目標固定・弾消去・カメラ演出等を行う。
     switch (state_) {
     case BossState::Idle:
-        flightVelocity_ = {};
+        // 攻撃終了地点を出発点にして、次の巡回先を新しく選ぶ。
+        // 速度を急にゼロにせず、少し慣性を残す。
+        flightVelocity_.x *= 0.45f;
+        flightVelocity_.y *= 0.45f;
+        flightTimer_ = 0;
         visual_.SetMode(BossVfxMode::Idle);
         break;
     case BossState::Warning:
@@ -276,12 +313,19 @@ void Boss::ChangeState(BossState next) {
             wireUsedDuringRush_ = false;
             rushHitPlayer_ = false;
             rushDodgeStunPending_ = false;
+            // 右側にいるプレイヤーには左端から、左側にいるプレイヤーには右端から突進。
+            // 予兆開始時に方向を固定し、途中でプレイヤーが動いても反転させない。
+            const float middleX = (BossStage1::kArenaLeft + BossStage1::kArenaRight) * 0.5f;
+            rushDirection_ = (!targetPosition_ || targetPosition_->x >= middleX) ? 1 : -1;
+            const float halfWidth = BossStage1::kBossWidth * 0.5f;
+            rushTargetX_ = (rushDirection_ > 0)
+                ? BossStage1::kArenaRight - halfWidth
+                : BossStage1::kArenaLeft + halfWidth;
         }
         visual_.SetMode(BossVfxMode::Warning);
         break;
     case BossState::Rush:
-        // 床上の高さを固定。プレイヤーを追尾せず、予兆で決めたXを通過する。
-        position_.y = BossStage1::kRushGroundY;
+        // 予兆中に端へ移動済み。ここでは位置を瞬間移動させない。
         rushStart_ = position_;
         rushVelocity_ = 0.0f;
         visual_.SetMode(BossVfxMode::Rush);
@@ -334,10 +378,21 @@ void Boss::ChangeState(BossState next) {
         toyAimY_ = Clamp(targetPosition_ ? targetPosition_->y : position_.y,
             BossStage1::kFloorY + 75.0f, PortalConfig::kWorldCeiling - 60.0f);
         toyDirection_ = (targetPosition_ && targetPosition_->x > position_.x) ? 1 : -1;
+        if (nextAttack_ == BossAttack::Top) {
+            // 壁に近い場合は、広い方へ投げて十分な走行距離を確保する。
+            const float left = BossStage1::kArenaLeft + 128.0f;
+            const float right = BossStage1::kArenaRight - 128.0f;
+            if ((toyDirection_ < 0 && position_.x - left < 300.0f) ||
+                (toyDirection_ > 0 && right - position_.x < 300.0f))
+                toyDirection_ = -toyDirection_;
+        }
         toyPosition_ = { position_.x + toyDirection_ * 47.0f,position_.y - 20.0f };
         toyVelocity_ = { toyDirection_ * (nextAttack_ == BossAttack::Top ? battleSettings_.topInitialSpeed : 14.5f),3.0f };
         toyOriginX_ = toyPosition_.x;
         toyReturning_ = toyLanded_ = toyHasHitPlayer_ = false;
+        topPhase_ = TopPhase::Drop;
+        topElapsed_ = 0;
+        topLaunchX_ = toyPosition_.x;
         ShakeCamera(2.5f, 4); // 手から放り投げる反動
         break;
     case BossState::Defeated:
@@ -374,12 +429,12 @@ bool Boss::RegisterMashHit() {
     if (state_ != BossState::ArmorStun || IsDefeated()) return false;
     ++mashCount_;
     const int bonus = (mashCount_ / BossStage1::kMashBonusEvery);
-    hp_ -= BossStage1::kMashDamage + bonus;
+    hp_ -= battleSettings_.mashDamage + bonus;
     hitstop_ = 0; // 連打の受付を止めない。ボスの外見・画面揺れだけでヒット感を表す。
     ShakeCamera(2.0f + static_cast<float>(mashCount_ > 12 ? 12 : mashCount_) * 0.16f,
         BossStage1::kMashHitShakeFrames);
     if (hp_ <= 0) { hp_ = 0; ChangeState(BossState::Defeated); }
-    else if (hp_ <= kMaxHp / 2 && !armorRebuilt_) {
+    else if (hp_ * 100 <= GetMaxHp() * battleSettings_.phase2HpPercent && !armorRebuilt_) {
         rebuildOnWake_ = true;
         ChangeState(BossState::WakeBlast);
     }
@@ -390,7 +445,19 @@ void Boss::ChangePressPhase(PressPhase next) {
     pressPhase_ = next;
     pressFrame_ = 0;
     if (next == PressPhase::Dive) pressFallSpeed_ = 3.0f;
-    if (next == PressPhase::Return) pressReturnStart_ = position_;
+    if (next == PressPhase::Return) {
+        pressReturnStart_ = position_;
+        // プレスの着地点から上昇する。高さも毎回変え、一定位置へ帰還しない。
+        aiRandomState_ ^= aiRandomState_ << 13;
+        aiRandomState_ ^= aiRandomState_ >> 17;
+        aiRandomState_ ^= aiRandomState_ << 5;
+        const float r = (aiRandomState_ % 1000u) / 999.0f;
+        const float side = (flightDirection_ > 0 ? 1.0f : -1.0f);
+        pressReturnDestination_ = {
+            Clamp(position_.x + side * (85.0f + r * 125.0f), 230.0f, 1050.0f),
+            370.0f + r * 150.0f
+        };
+    }
 }
 bool Boss::IsWeakPointOpen() const {
     return IsCoreExposed() &&
@@ -447,7 +514,7 @@ bool Boss::TakeDamage(int amount, bool isGrappleHit, bool isSpinHit, bool fromWi
     hp_ -= amount;
     visual_.OnMuzzleFlash(position_);
     if (hp_ <= 0) { hp_ = 0;ChangeState(BossState::Defeated); }
-    else if (hp_ <= kMaxHp / 2 && !armorRebuilt_) {
+    else if (hp_ * 100 <= GetMaxHp() * battleSettings_.phase2HpPercent && !armorRebuilt_) {
         // 通常攻撃でHP半分を跨いだときも第2段階へ（連打以外のルートを塞がない）。
         rebuildOnWake_ = true;
         ChangeState(BossState::WakeBlast);
@@ -505,8 +572,8 @@ void Boss::UpdatePress() {
         // ⑤ 行き過ぎて小さく戻る、二次補間。衝撃後の機械らしい復帰。
         float t = Clamp(pressFrame_ / 34.0f, 0.0f, 1.0f);
         float ease = 1.0f - (1.0f - t) * (1.0f - t);
-        position_.x = pressReturnStart_.x + (homePosition_.x - pressReturnStart_.x) * ease;
-        position_.y = pressReturnStart_.y + (homePosition_.y - pressReturnStart_.y) * ease;
+        position_.x = pressReturnStart_.x + (pressReturnDestination_.x - pressReturnStart_.x) * ease;
+        position_.y = pressReturnStart_.y + (pressReturnDestination_.y - pressReturnStart_.y) * ease;
         if (pressFrame_ >= 34) { ChangeState(BossState::Idle); }
         break;
     }
@@ -530,47 +597,82 @@ void Boss::Shoot(int spreadIndex) {
     else b.velocity = { -speed,0.0f };
     visual_.OnMuzzleFlash(b.position);
 }
+void Boss::TriggerAttackForEditor(BossAttack attack) {
+    if (IsDefeated() || state_ == BossState::ArmorCurl ||
+        state_ == BossState::ArmorFalling || state_ == BossState::ArmorImpact ||
+        state_ == BossState::ArmorStun || state_ == BossState::WakeBlast) return;
+    if (attack != BossAttack::Top && attack != BossAttack::YoYo) return;
+    nextAttack_ = attack;
+    ChangeState(BossState::Toy);
+}
+
 void Boss::UpdateToy() {
     if (nextAttack_ == BossAttack::Top) {
-        // 【コマ】低空を回転しながら滑り、壁で跳ね返る。
-        // 当たり判定は円1つ。描画は四角形2〜3枚のみ。
-        toyPosition_.x += toyVelocity_.x;
-        if (!toyLanded_) {
-            // ボスが放り投げたガラクタが重力で落ちてから回転する。
-            toyVelocity_.y -= 1.1f;
+        // 【コマ】1: 落下 2: 床を進む 3: 壁に反射 4: 発射地点へ帰還。
+        // 制限フレームだけで途中消滅しない。帰還した瞬間にのみ攻撃終了する。
+        ++topElapsed_;
+        const float radius = 128.0f; // 256x256画像の外接範囲
+        const float left = BossStage1::kArenaLeft + radius;
+        const float right = BossStage1::kArenaRight - radius;
+        const float floorCenter = BossStage1::kFloorY + radius;
+        const float speed = battleSettings_.topInitialSpeed;
+        if (topPhase_ == TopPhase::Drop) {
+            // 床へ降りながら水平方向にも進む。着地後は床面の高さに固定する。
+            toyVelocity_.y = Clamp(toyVelocity_.y - battleSettings_.topGravity, -26.0f, 12.0f);
             toyPosition_.y += toyVelocity_.y;
-            if (toyPosition_.y <= BossStage1::kFloorY + 25.0f) {
-                toyPosition_.y = BossStage1::kFloorY + 25.0f;
+            if (toyPosition_.y <= floorCenter) {
+                toyPosition_.y = floorCenter;
+                toyVelocity_.y = 0.0f;
+                topPhase_ = TopPhase::Roll;
                 toyLanded_ = true;
-                ShakeCamera(3.0f, 4);
+                ShakeCamera(3.0f, 5);
             }
         }
         else {
-            toyPosition_.y = BossStage1::kFloorY + 25.0f +
-                11.0f * Abs(std::sin(stateFrame_ * 0.18f));
+            // 軸がわずかに上下する。回転角はDraw側のstateFrame_を使用。
+            toyPosition_.y = floorCenter + battleSettings_.topBounceHeight *
+                Abs(std::sin(stateFrame_ * 0.14f));
         }
-        if (toyPosition_.x<BossStage1::kArenaLeft || toyPosition_.x>BossStage1::kArenaRight) {
-            toyVelocity_.x *= -0.93f;
-            toyPosition_.x = Clamp(toyPosition_.x, BossStage1::kArenaLeft, BossStage1::kArenaRight);
-            toyReturning_ = true;
-            ShakeCamera(3.0f, 4);
+        toyPosition_.x += toyVelocity_.x;
+        if (topPhase_ != TopPhase::Return) {
+            // 必ず最初の壁に触れるまで進み、そこで一度だけ折り返す。
+            const bool wallHit = (toyVelocity_.x < 0.0f && toyPosition_.x <= left) ||
+                (toyVelocity_.x > 0.0f && toyPosition_.x >= right);
+            if (wallHit) {
+                toyPosition_.x = Clamp(toyPosition_.x, left, right);
+                toyVelocity_.x = -toyDirection_ * (speed * 0.65f);
+                topPhase_ = TopPhase::Return;
+                toyReturning_ = true;
+                ShakeCamera(3.0f, 5);
+            }
         }
-        // ステージ端で反射したら、投げた位置へ戻った時点で退場。
-        const bool hasReturned = toyReturning_ &&
-            ((toyDirection_ < 0 && toyPosition_.x >= toyOriginX_) ||
-                (toyDirection_ > 0 && toyPosition_.x <= toyOriginX_));
-        if (hasReturned) { ChangeState(BossState::Idle); return; }
+        else {
+            // 反射直後は遅く、徐々に巡航速度へ近付く。
+            const float wanted = -toyDirection_ * speed;
+            toyVelocity_.x += (wanted - toyVelocity_.x) * battleSettings_.topReturnAccel;
+            const bool arrived = toyDirection_ > 0 ? toyPosition_.x <= topLaunchX_ : toyPosition_.x >= topLaunchX_;
+            if (arrived) {
+                toyPosition_.x = topLaunchX_; // 帰還完了後に消すのでワープとして見えない
+                ChangeState(BossState::Idle);
+                return;
+            }
+        }
+        // 予期せず地形範囲を逸脱した場合でも無限ループにならない安全策。
+        // 通常プレイでは左右移動→1回反射→帰還で必ず終了する。
+        if (topElapsed_ >= battleSettings_.topMaxLifetime) {
+            ChangeState(BossState::Idle);
+        }
+        return;
     }
-    else {
-        // 【ヨーヨー】伸びる→一瞬停止→縮む。実体を作りすぎず位置計算だけ。
-        const float t = Clamp(stateFrame_ / static_cast<float>(battleSettings_.yoyoDuration), 0.0f, 1.0f);
-        const float pulse = std::sin(t * 3.14159265f);
-        toyPosition_.x = position_.x + toyDirection_ * pulse * battleSettings_.yoyoRange;
-        toyPosition_.y = toyAimY_ + BossStage1::kYoYoHeightWave * std::sin(t * 6.2831853f);
-    }
-    const int duration = nextAttack_ == BossAttack::YoYo ?
-        battleSettings_.yoyoDuration : battleSettings_.topDuration;
-    if (stateFrame_ >= duration) ChangeState(BossState::Idle);
+    // 【ヨーヨー】伸ばす→緩める→戻すをsinで往復させる。
+    const float pi = 3.14159265f;
+    const float t = Clamp(stateFrame_ / static_cast<float>(battleSettings_.yoyoDuration), 0.0f, 1.0f);
+    const float extend = std::sin(pi * t);
+    const float baseY = position_.y - 20.0f;
+    toyPosition_.x = position_.x + toyDirection_ * (47.0f + extend * battleSettings_.yoyoRange);
+    toyPosition_.y = baseY + (toyAimY_ - baseY) * extend +
+        BossStage1::kYoYoHeightWave * std::sin(2.0f * pi * t) * extend;
+    if (stateFrame_ >= battleSettings_.yoyoDuration) ChangeState(BossState::Idle);
 }
 void Boss::UpdateBullets() {
     for (auto& b : bullets_) if (b.active) {
@@ -596,7 +698,8 @@ int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitS
         }
     }
     if (state_ == BossState::Toy) {
-        const float r = playerRadius + BossStage1::kToyRadius;
+        const float toyRadius = nextAttack_ == BossAttack::Top ? battleSettings_.topHitRadius : 48.0f;
+        const float r = playerRadius + toyRadius;
         if (Dist2(playerPosition, toyPosition_) <= r * r && !toyHasHitPlayer_) {
             toyHasHitPlayer_ = true;
             if (hitSource) *hitSource = toyPosition_;
@@ -619,26 +722,44 @@ int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitS
 // 目的地はプレイヤーから距離を取りつつ画面内に収め、速度をなめらかに変える。
 void Boss::UpdateFlight() {
     if (--flightTimer_ <= 0) {
-        flightTimer_ = IsEnraged() ? battleSettings_.flightIntervalPhase2 : battleSettings_.flightInterval;
-        flightDirection_ = -flightDirection_;
-        // プレイヤーのすぐ上で静止しないよう左右に散らして位置を決める。
-        const float playerX = targetPosition_ ? targetPosition_->x : 420.0f;
-        aiRandomState_ ^= aiRandomState_ << 13;
-        aiRandomState_ ^= aiRandomState_ >> 17;
-        aiRandomState_ ^= aiRandomState_ << 5;
-        const float random = (aiRandomState_ % 1000u) / 999.0f;
-        const float offset = 320.0f + random * 230.0f;
-        homePosition_.x = Clamp(playerX + flightDirection_ * offset, 280.0f, 1010.0f);
-        homePosition_.y = 400.0f + random * 135.0f;
+        const int interval = IsEnraged() ? battleSettings_.flightIntervalPhase2 : battleSettings_.flightInterval;
+        flightTimer_ = interval > 0 ? interval : 1;
+
+        // 固定の基準位置や「プレイヤーから一定距離」の二択は使わない。
+        // アリーナ内から、現在位置と十分離れた目的地を毎回選ぶ。
+        // シードは以前から使っているAI用乱数状態を引き継ぐ。
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            aiRandomState_ ^= aiRandomState_ << 13;
+            aiRandomState_ ^= aiRandomState_ >> 17;
+            aiRandomState_ ^= aiRandomState_ << 5;
+            const float rx = (aiRandomState_ % 10000u) / 9999.0f;
+            aiRandomState_ ^= aiRandomState_ << 13;
+            aiRandomState_ ^= aiRandomState_ >> 17;
+            aiRandomState_ ^= aiRandomState_ << 5;
+            const float ry = (aiRandomState_ % 10000u) / 9999.0f;
+
+            const Vector2 candidate = { 235.0f + rx * 810.0f, 350.0f + ry * 200.0f };
+            const float dx = candidate.x - position_.x;
+            const float dy = candidate.y - position_.y;
+            flightDestination_ = candidate;
+            if (dx * dx + dy * dy >= 170.0f * 170.0f) break;
+        }
+        flightDirection_ = flightDestination_.x >= position_.x ? 1 : -1;
     }
-    // 速度ベクトルを目標方向へ少しずつ近づける（急な瞬間移動を防ぐ）。
+
+    // 目標速度に向かって徐々に加減速させる。座標を一瞬で代入しない。
     const float maxSpeed = IsEnraged() ? battleSettings_.flightSpeedPhase2 : battleSettings_.flightSpeed;
-    const float wantedX = Clamp((homePosition_.x - position_.x) * 0.065f, -maxSpeed, maxSpeed);
-    const float wantedY = Clamp((homePosition_.y - position_.y) * 0.050f, -maxSpeed * 0.65f, maxSpeed * 0.65f);
+    const float wantedX = Clamp((flightDestination_.x - position_.x) * 0.065f, -maxSpeed, maxSpeed);
+    const float wantedY = Clamp((flightDestination_.y - position_.y) * 0.050f, -maxSpeed * 0.65f, maxSpeed * 0.65f);
     flightVelocity_.x += (wantedX - flightVelocity_.x) * 0.14f;
     flightVelocity_.y += (wantedY - flightVelocity_.y) * 0.12f;
-    position_.x = Clamp(position_.x + flightVelocity_.x, 225.0f, 1055.0f);
-    position_.y = Clamp(position_.y + flightVelocity_.y, 345.0f, 555.0f);
+    // 突進後は床上Y=192付近から再浮上する。
+    // ここで最低高度345へClampすると153pxワープするので、床の高さを下限にする。
+    position_.x = Clamp(position_.x + flightVelocity_.x,
+        BossStage1::kArenaLeft + BossStage1::kBossWidth * 0.5f,
+        BossStage1::kArenaRight - BossStage1::kBossWidth * 0.5f);
+    position_.y = Clamp(position_.y + flightVelocity_.y,
+        BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f, 555.0f);
 }
 
 void Boss::Update() {
@@ -666,7 +787,7 @@ void Boss::Update() {
     switch (state_) {
     case BossState::Idle:
         // 【直した原因③】射撃で横へノックバックした後、そのまま位置がズレ続けていた。
-        // 次の技までに必ず戻す。ボスが画面外へ逃げたりフックが射程外にならない。
+        // 毎回同じ位置へ戻さず、新しい巡回地点へ向かう。
         UpdateFlight();
         if (stateFrame_ >= (IsEnraged() ? 24 : battleSettings_.idleFrames)) {
             ChooseAttack();
@@ -687,9 +808,16 @@ void Boss::Update() {
         // プレスは予兆前半だけ追尾し、後半は予測位置が固定される。
         if (nextAttack_ == BossAttack::Press && stateFrame_ < 12 && targetPosition_)
             pressTargetX_ = targetPosition_->x;
-        // 突進は床すれすれへ降下してから横へ飛ぶ。ワイヤー/ジャンプで避けられる。
-        if (nextAttack_ == BossAttack::Rush)
-            position_.y += (rushTargetY_ - position_.y) * 0.13f;
+        // 突進の予兆中は「開始側の端」へ飛んでいき、床スレスレまで降りる。
+        // Approachで最大移動量を制限するため、開始位置へのテレポートは起きない。
+        if (nextAttack_ == BossAttack::Rush) {
+            const float halfWidth = BossStage1::kBossWidth * 0.5f;
+            const float startX = rushDirection_ > 0
+                ? BossStage1::kArenaLeft + halfWidth
+                : BossStage1::kArenaRight - halfWidth;
+            position_.x = Approach(position_.x, startX, 18.0f);
+            position_.y = Approach(position_.y, rushTargetY_, 8.0f);
+        }
         // 予兆中はターゲットを追い過ぎず、赤い狙いBOXだけで危険を示す。
         // 警告の十字も技に対応した位置へ。全部が床警告になる誤解をなくす。
         const Vector2 targetPos = targetPosition_ ? *targetPosition_ : position_;
@@ -698,16 +826,20 @@ void Boss::Update() {
             warningY = BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f;
         else if (nextAttack_ == BossAttack::Top)
             warningY = BossStage1::kFloorY + 25.0f;
-        visual_.SetWarning(stateFrame_ / duration,
+        visual_.SetWarning(Clamp(stateFrame_ / duration, 0.0f, 1.0f),
             { nextAttack_ == BossAttack::Press ? pressTargetX_ : targetPos.x,warningY });
-        if (stateFrame_ >= duration) {
-            if (targetPosition_) rushDirection_ = (targetPosition_->x < position_.x) ? -1 : 1;
-            // 【突進の狙い固定】床の高さだけでなく、走り抜ける位置もここで確定。
-            // 狙った地点を通過したら止まり、回避成功時すぐ反撃できる距離を残す。
-            rushTargetX_ = Clamp((targetPosition_ ? targetPosition_->x : position_.x) +
-                rushDirection_ * BossStage1::kRushOvershoot,
-                BossStage1::kArenaLeft + BossStage1::kBossWidth * 0.5f,
-                BossStage1::kArenaRight - BossStage1::kBossWidth * 0.5f);
+        // 突進だけは、予兆時間が終わっても開始側の端に着くまで攻撃を始めない。
+        // そのため、どこから予兆に入っても必ずステージの端から端まで走れる。
+        bool readyToRush = true;
+        if (nextAttack_ == BossAttack::Rush) {
+            const float halfWidth = BossStage1::kBossWidth * 0.5f;
+            const float startX = rushDirection_ > 0
+                ? BossStage1::kArenaLeft + halfWidth
+                : BossStage1::kArenaRight - halfWidth;
+            readyToRush = Abs(position_.x - startX) <= 0.5f &&
+                Abs(position_.y - rushTargetY_) <= 0.5f;
+        }
+        if (stateFrame_ >= duration && readyToRush) {
             switch (nextAttack_) {
             case BossAttack::Press: ChangeState(BossState::Press); break;
             case BossAttack::Shot: ChangeState(BossState::Shot); break;
@@ -718,21 +850,20 @@ void Boss::Update() {
         break;
     }
     case BossState::Rush: {
-        // 【地上突進】Y座標は一切追跡せず、床のすぐ上を左右に突き抜ける。
-        position_.y = Approach(position_.y, BossStage1::kRushGroundY, 7.0f);
-        // 一瞬逆側へ溜めてから、速度を上げる。線を大量に描かなくても迫力。
-        if (stateFrame_ <= 2) position_.x -= rushDirection_ * 3.0f;
-        else {
-            rushVelocity_ = Clamp(rushVelocity_ + battleSettings_.rushAccel, 0.0f,
-                battleSettings_.rushSpeed * (IsEnraged() ? 1.25f : 1.0f));
-            position_.x += rushDirection_ * rushVelocity_;
-        }
-        const bool passedTarget = rushDirection_ < 0 ?
+        // ステージの端から反対側の端まで、プレイヤーの現在位置に左右されず突進する。
+        position_.y = rushTargetY_;
+        const float maxSpeed = (battleSettings_.rushSpeed > 1.0f ? battleSettings_.rushSpeed : 1.0f) *
+            (IsEnraged() ? 1.25f : 1.0f);
+        const float accel = battleSettings_.rushAccel > 0.1f ? battleSettings_.rushAccel : 0.1f;
+        rushVelocity_ = Clamp(rushVelocity_ + accel, 0.0f, maxSpeed);
+        position_.x += rushDirection_ * rushVelocity_;
+
+        // 機体の幅も含めて端に収まる位置で止める。行き過ぎや画面外への消失を防ぐ。
+        const bool reachedEdge = rushDirection_ < 0 ?
             position_.x <= rushTargetX_ : position_.x >= rushTargetX_;
-        if (stateFrame_ >= BossStage1::kRushFrames || passedTarget ||
-            position_.x<BossStage1::kArenaLeft || position_.x>BossStage1::kArenaRight) {
-            // 逃げに成功したら「画面端まで戻ってから失速」ではなく、ここで失速する。
-            // 回避→反撃のタイミングが近くなり、ワイヤーの使い道が生まれる。
+        if (reachedEdge) {
+            position_.x = rushTargetX_;
+            rushVelocity_ = 0.0f;
             rushDodgeStunPending_ = wireUsedDuringRush_ && !rushHitPlayer_;
             ShakeCamera(3.0f, 5);
             ChangeState(rushDodgeStunPending_ ? BossState::Dizzy : BossState::Recovery);
@@ -740,17 +871,13 @@ void Boss::Update() {
         break;
     }
     case BossState::Recovery:
-        // 一度減速/反動を見せてからホームへ戻る。
-        if (stateFrame_ < BossStage1::kRushBrakeFrames) {
-            position_.x += rushDirection_ * rushVelocity_ * (1.0f - stateFrame_ / static_cast<float>(BossStage1::kRushBrakeFrames)) * 0.28f;
-        }
-        else {
-            const float dx = homePosition_.x - position_.x;
-            position_.x = Approach(position_.x, homePosition_.x, IsEnraged() ? 11.0f : 8.0f);
-            position_.y = Approach(position_.y, homePosition_.y, 4.0f);
-            if (Abs(dx) < 9.0f && Abs(homePosition_.y - position_.y) < 5.0f) {
-                ChangeState(rushDodgeStunPending_ ? BossState::Dizzy : BossState::Idle);
-            }
+        // 突進を終えた場所から滑らかに飛行再開。固定位置には戻らない。
+        // 反動で場外に出ないよう、端で速度を落としてから自由飛行へ移る。
+        rushVelocity_ *= 0.72f;
+        if (stateFrame_ > BossStage1::kRushBrakeFrames) {
+            flightTimer_ = 0; // 次のIdle更新で新しい飛行先を選ぶ
+            flightVelocity_ = {};
+            ChangeState(BossState::Idle);
         }
         break;
     case BossState::ArmorCurl:
@@ -775,15 +902,15 @@ void Boss::Update() {
         // 【叩き放題】長い反撃時間。HPが0になれば吹き飛ばしを出さず撃破。
         if (stateFrame_ >= BossStage1::kMashTimeFrames) {
             // 時間切れでもプレイヤーを吹き飛ばす。HP半分は一度しか復活しない。
-            rebuildOnWake_ = !armorRebuilt_ && hp_ <= kMaxHp / 2;
+            rebuildOnWake_ = !armorRebuilt_ && hp_ * 100 <= GetMaxHp() * battleSettings_.phase2HpPercent;
             ChangeState(BossState::WakeBlast);
         }
         break;
     case BossState::WakeBlast:
         // 【復帰】ここに入ったフレームだけStageへ衝撃イベントを通知。
-        // その後ボスは高い定位置に戻って元の5技AIを再開する。
+        // その後ボスは今の位置から空中を巡回して5技AIを再開する。
         if (stateFrame_ >= BossStage1::kArmorWakeFrames) {
-            // 地面から上へ戻してから通常AI復帰。以後の上昇もIdleの既存処理に任せる。
+            // 地面から空中へ復帰する動作はIdleの自由飛行に任せる。
             ChangeState(BossState::Idle);
         }
         break;
@@ -791,7 +918,7 @@ void Boss::Update() {
         // 【反撃猶予】ワイヤーで突進をかわした直後の隙。
         // コア露出済なら与ダメUP。まだ外装があれば通常攻撃でも剥がしやすい。
         if (stateFrame_ >= battleSettings_.rushDizzy)
-            ChangeState(BossState::Recovery); // 隙の後で帰還し、次の予兆へ
+            ChangeState(BossState::Recovery); // 隙の後で現在位置から飛行再開
         break;
     case BossState::Press: UpdatePress(); break;
     case BossState::Shot:
@@ -799,11 +926,12 @@ void Boss::Update() {
         if (stateFrame_ == 9 || stateFrame_ == 28) {
             for (int i = -1;i <= 1;++i) Shoot(i);
             ShakeCamera(1.8f, 3);
-            position_.x -= rushDirection_ * 16.0f; // 反動。Idleでホームへ復帰する
+            position_.x -= rushDirection_ * 16.0f; // 反動。次は今の位置から飛行する
         }
         else if (stateFrame_ > 9 && stateFrame_ < 42) {
-            // 急なノックバックの後にじわっと戻る。追加描画なしの重さ。
-            position_.x = Approach(position_.x, homePosition_.x, BossStage1::kShotReturnSpeed);
+            // 射撃中は反動の余韻だけを残す。目標位置へ引き戻さない。
+            flightVelocity_.x *= 0.88f;
+            position_.x = Clamp(position_.x + flightVelocity_.x, 225.0f, 1055.0f);
         }
         if (stateFrame_ >= 48) ChangeState(BossState::Idle);
         break;
@@ -827,7 +955,8 @@ void Boss::Draw() const {
         const Vector2 target = targetPosition_ ? *targetPosition_ : position_;
         switch (nextAttack_) {
         case BossAttack::Rush:
-            PortalDraw::Box({ 640.0f,rushTargetY_ }, 1120.0f, 7.0f, color);
+            PortalDraw::Box({ (BossStage1::kArenaLeft + BossStage1::kArenaRight) * 0.5f, rushTargetY_ },
+                BossStage1::kArenaRight - BossStage1::kArenaLeft, 7.0f, color);
             break;
         case BossAttack::Press:
             // どこへ落ちてくるか床に予測エリア。移動して回避できる。
@@ -941,15 +1070,23 @@ void Boss::Draw() const {
         PortalDraw::Box(GetCoreHitPoint(), 20.0f * pulse, 22.0f * pulse,
             IsWeakPointOpen() ? 0xFF3030FF : 0xC73A48FF);
     }
-    // 「コマ」は回転BOX2枚、「ヨーヨー」は本体と1本の線＋BOX2枚。
+    // コマ256px・ヨーヨー128pxの画像を使い、攻撃の差が一目で分かるようにする。
     if (state_ == BossState::WakeBlast && stateFrame_ < 12) {
         // 起き上がり：描画BOX1枚で衝撃を表す。Player側へ同じ瞬間に速度を与える。
         PortalDraw::Box(position_, 300.0f + stateFrame_ * 17.0f, 8.0f, 0xFFE9BCCC);
     }
     if (state_ == BossState::Toy) {
-        if (nextAttack_ == BossAttack::YoYo) PortalDraw::Line(position_, toyPosition_, 0xF0D3FFFF);
-        PortalDraw::RotatedBox(toyPosition_, 44.0f, 24.0f, stateFrame_ * 0.43f, 0xFFE6A3FF);
-        PortalDraw::RotatedBox(toyPosition_, 13.0f, 42.0f, -stateFrame_ * 0.56f, 0xC77AFFFF);
+        static int topHandle = -2;
+        static int yoyoHandle = -2;
+        if (nextAttack_ == BossAttack::Top) {
+            DrawToySprite("./resources/texture/boss/form1/gyro.png",
+                toyPosition_, 256, stateFrame_ * 0.24f, topHandle);
+        }
+        else {
+            PortalDraw::Line(position_, toyPosition_, 0xF0D3FFFF);
+            DrawToySprite("./resources/texture/boss/form1/yo-yo.png",
+                toyPosition_, 128, stateFrame_ * 0.17f, yoyoHandle);
+        }
     }
     for (const auto& b : bullets_) if (b.active) visual_.DrawBullet(b.position, b.velocity);
     visual_.DrawFront();

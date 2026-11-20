@@ -23,7 +23,7 @@ void PortalPlayer::Initialize(Vector2 position) {
     grappleAge_ = 0; grappleLastDistance_ = 0.0f;
     armorPeelFrames_ = 0; armorPeelTarget_ = -1; armorPeelRequest_ = -1; armorTetherSlot_ = -1;
     armorPullFailFrames_ = 0; normalAttackFrames_ = 0; normalAttackDirection_ = { 1.0f,0.0f };
-    spinFrames_ = 0; hurtFrames_ = 0; hitConfirmFrames_ = 0; hp_ = kMaxHp;
+    spinFrames_ = 0; hurtFrames_ = 0; hitConfirmFrames_ = 0; hp_ = maxHp_;
     sourceKnockX_ = 0.0f; sourceKnockHold_ = 0; sourceAirDownUsed_ = false;
     jumpCutArmed_ = false;
     castPulse_ = landingBounce_ = gripStretch_ = bodyLean_ = 0.0f;

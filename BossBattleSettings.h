@@ -37,7 +37,13 @@ struct BossBattleSettings {
     float pressSpeed = 42.0f, pressAccel = 2.2f;
     int pressWarning = 42, pressStun = 47;
     float topInitialSpeed = 25.0f;
-    int topDuration = 120;
+    int topDuration = 120; // 旧設定との互換性用。実際の終了判定は帰還到着を優先。
+    float topGravity = 1.45f;        // 落下中の重力（+Y上向き）
+    float topBounceHeight = 5.0f;    // 床で回転する時の上下幅
+    float topReturnAccel = 0.055f;  // 反射後の速度変化率
+    float topHitRadius = 80.0f;      // プレイヤーへの攻撃半径
+    int topMaxLifetime = 720;       // 異常時の安全停止時間
+
     float yoyoRange = 490.0f;
     int yoyoDuration = 98, toyWarning = 34;
     int idleFrames = 30;
@@ -50,6 +56,16 @@ struct BossBattleSettings {
     // 0=本体、1～3=プロペラ / 追加0～3=ジェット、4=パイプ、5=目
     std::array<BattlePoint, 4> partGrips = { {{0,0},{-112,112},{0,148},{112,112}} };
     std::array<BattlePoint, 6> accessoryGrips = { {{-132,-66},{-108,18},{129,25},{130,-73},{51,-115},{0,4}} };
+
+    // GUIで調整するHPとダメージ。V1〜V3ではこの初期値を使う。
+    int bossMaxHp = 190;
+    int playerMaxHp = 100;
+    int phase2HpPercent = 50;
+    int normalDamage = 8;
+    int spinDamage = 14;
+    int grappleDamage = 20;
+    int mashDamage = 8;
+    int incomingDamagePercent = 100;
 
     // 設定値が想定範囲内か確認する。壊れた設定を採用しないための判定。
     bool Valid() const {
@@ -74,6 +90,11 @@ struct BossBattleSettings {
             pressWarning >= 8 && pressWarning <= 180 && pressStun >= 0 && pressStun <= 180 &&
             std::isfinite(topInitialSpeed) && topInitialSpeed >= 3 && topInitialSpeed <= 45 &&
             topDuration >= 30 && topDuration <= 300 &&
+            std::isfinite(topGravity) && topGravity >= 0.1f && topGravity <= 8.0f &&
+            std::isfinite(topBounceHeight) && topBounceHeight >= 0.0f && topBounceHeight <= 30.0f &&
+            std::isfinite(topReturnAccel) && topReturnAccel >= 0.005f && topReturnAccel <= 0.5f &&
+            std::isfinite(topHitRadius) && topHitRadius >= 20.0f && topHitRadius <= 128.0f &&
+            topMaxLifetime >= 180 && topMaxLifetime <= 1800 &&
             std::isfinite(yoyoRange) && yoyoRange >= 100 && yoyoRange <= 900 &&
             yoyoDuration >= 30 && yoyoDuration <= 300 && toyWarning >= 8 && toyWarning <= 180 &&
             idleFrames >= 8 && idleFrames <= 180 &&
@@ -81,6 +102,14 @@ struct BossBattleSettings {
             std::isfinite(flightSpeedPhase2) && flightSpeedPhase2 >= 0.1f && flightSpeedPhase2 <= 35.0f &&
             flightInterval >= 10 && flightInterval <= 360 &&
             flightIntervalPhase2 >= 10 && flightIntervalPhase2 <= 360 &&
+            bossMaxHp >= 1 && bossMaxHp <= 10000 &&
+            playerMaxHp >= 1 && playerMaxHp <= 1000 &&
+            phase2HpPercent >= 1 && phase2HpPercent <= 99 &&
+            normalDamage >= 0 && normalDamage <= 500 &&
+            spinDamage >= 0 && spinDamage <= 500 &&
+            grappleDamage >= 0 && grappleDamage <= 500 &&
+            mashDamage >= 0 && mashDamage <= 500 &&
+            incomingDamagePercent >= 0 && incomingDamagePercent <= 500 &&
             validGripPoints();
     }
     bool validGripPoints() const {
@@ -95,7 +124,7 @@ struct BossBattleSettings {
         if (!Valid())return false;
         std::ofstream out(path, std::ios::trunc);
         if (!out)return false;
-        out << "PORTAL_BOSS_BATTLE_V3\n" << std::setprecision(9);
+        out << "PORTAL_BOSS_BATTLE_V5\n" << std::setprecision(9);
         out << "anchors " << anchorCount << '\n';
         for (int i = 0;i < anchorCount;++i) out << "anchor " << anchors[i].x << ' ' << anchors[i].y << '\n';
         out << "spawn " << bossSpawn.x << ' ' << bossSpawn.y << '\n';
@@ -105,11 +134,16 @@ struct BossBattleSettings {
         out << "shot " << shotPredict << ' ' << shotWarning << '\n';
         out << "press " << pressSpeed << ' ' << pressAccel << ' ' << pressWarning << ' ' << pressStun << '\n';
         out << "top " << topInitialSpeed << ' ' << topDuration << '\n';
+        out << "topPhysics " << topGravity << ' ' << topBounceHeight << ' '
+            << topReturnAccel << ' ' << topHitRadius << ' ' << topMaxLifetime << '\n';
         out << "yoyo " << yoyoRange << ' ' << yoyoDuration << ' ' << toyWarning << '\n';
         out << "idle " << idleFrames << '\n';
         out << "flight " << flightSpeed << ' ' << flightSpeedPhase2 << ' ' << flightInterval << ' ' << flightIntervalPhase2 << '\n';
         for (const auto& pt : partGrips) out << "partGrip " << pt.x << ' ' << pt.y << '\n';
         for (const auto& pt : accessoryGrips) out << "extraGrip " << pt.x << ' ' << pt.y << '\n';
+        out << "combat " << bossMaxHp << ' ' << playerMaxHp << ' ' << phase2HpPercent
+            << ' ' << normalDamage << ' ' << spinDamage << ' ' << grappleDamage
+            << ' ' << mashDamage << ' ' << incomingDamagePercent << '\n';
         return out.good();
     }
 
@@ -120,9 +154,11 @@ struct BossBattleSettings {
         BossBattleSettings next;
         std::string word;
         const auto key = [&](const char* expected) { return bool(in >> word) && word == expected; };
-        if (!(in >> word) || (word != "PORTAL_BOSS_BATTLE_V1" && word != "PORTAL_BOSS_BATTLE_V2" && word != "PORTAL_BOSS_BATTLE_V3")) return false;
+        if (!(in >> word) || (word != "PORTAL_BOSS_BATTLE_V1" && word != "PORTAL_BOSS_BATTLE_V2" && word != "PORTAL_BOSS_BATTLE_V3" && word != "PORTAL_BOSS_BATTLE_V4" && word != "PORTAL_BOSS_BATTLE_V5")) return false;
         const bool legacy = word == "PORTAL_BOSS_BATTLE_V1";
-        const bool v3 = word == "PORTAL_BOSS_BATTLE_V3";
+        const bool v3 = word == "PORTAL_BOSS_BATTLE_V3" || word == "PORTAL_BOSS_BATTLE_V4" || word == "PORTAL_BOSS_BATTLE_V5";
+        const bool v4 = word == "PORTAL_BOSS_BATTLE_V4" || word == "PORTAL_BOSS_BATTLE_V5";
+        const bool v5 = word == "PORTAL_BOSS_BATTLE_V5";
         if (!key("anchors") || !(in >> next.anchorCount) ||
             next.anchorCount < 1 || next.anchorCount > kMaxAnchors)return false;
         for (int i = 0;i < next.anchorCount;++i)
@@ -142,12 +178,19 @@ struct BossBattleSettings {
         if (!key("shot") || !(in >> next.shotPredict >> next.shotWarning))return false;
         if (!key("press") || !(in >> next.pressSpeed >> next.pressAccel >> next.pressWarning >> next.pressStun))return false;
         if (!key("top") || !(in >> next.topInitialSpeed >> next.topDuration))return false;
+        if (v5 && (!key("topPhysics") || !(in >> next.topGravity >> next.topBounceHeight
+            >> next.topReturnAccel >> next.topHitRadius >> next.topMaxLifetime))) return false;
         if (!key("yoyo") || !(in >> next.yoyoRange >> next.yoyoDuration >> next.toyWarning))return false;
         if (!key("idle") || !(in >> next.idleFrames))return false;
         if (v3) {
             if (!key("flight") || !(in >> next.flightSpeed >> next.flightSpeedPhase2 >> next.flightInterval >> next.flightIntervalPhase2)) return false;
             for (auto& pt : next.partGrips) if (!key("partGrip") || !(in >> pt.x >> pt.y)) return false;
             for (auto& pt : next.accessoryGrips) if (!key("extraGrip") || !(in >> pt.x >> pt.y)) return false;
+        }
+        if (v4) {
+            if (!key("combat") || !(in >> next.bossMaxHp >> next.playerMaxHp >> next.phase2HpPercent
+                >> next.normalDamage >> next.spinDamage >> next.grappleDamage
+                >> next.mashDamage >> next.incomingDamagePercent)) return false;
         }
         // 余分な値が入っている場合も不正として扱う。
         if (in >> word)return false;
