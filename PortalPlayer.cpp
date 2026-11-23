@@ -14,6 +14,7 @@ namespace {
 
 void PortalPlayer::Initialize(Vector2 position) {
     position_ = position;
+    payoutFrames_ = 0; activeTentacleSlot_ = -1;
     velocity_ = {}; aim_ = { 1,0 }; facing_ = 1;
     cooldown_ = 0; grounded_ = (position.y <= PortalConfig::kFloor + 30.01f); selectedAnchor_ = -1; animationFrame_ = 0;
     coyoteFrames_ = 0; attackBufferFrames_ = 0; jumpBufferFrames_ = 0; attackIntentTarget_ = -1;
@@ -42,6 +43,7 @@ int PortalPlayer::ConsumeArmorPeelRequest() {
 }
 
 bool PortalPlayer::IsGripping() const {
+    if (sampleGripping_)return true;
     for (const auto& gate : gates_) if (gate.IsGripping()) return true;
     return false;
 }
@@ -203,6 +205,11 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
 
     if (std::fabs(input.move) > 0.1f) facing_ = input.move > 0 ? 1 : -1;
     aim_ = Length(input.aim) > 0.05f ? Unit(input.aim) : Vector2{ static_cast<float>(facing_),0 };
+    grappleMode_ = input.grappleMode;
+    requestedTentacleSlot_ = input.tentacleSlot;
+    if (input.releaseTentacle && IsGripping()) {
+        ReleaseAll(); activeGripAnchor_ = -1; payoutFrames_ = 0;
+    }
     // 【攻撃優先】右スティックの最初の入力は、ロックがあっても必ず触手攻撃。
     // これにより「全部グラップルになって攻撃できない」問題を防ぐ。
     selectedAnchor_ = input.aimExplicit ? FindAnchor(aim_, anchors, anchorCount, fixedCount, breakableCount) : -1;
@@ -315,14 +322,17 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
         if (normalAttack) {
             // 判定は独立して開始済み。以下の触手描画は空きがあれば使う。
             int freeSlot = -1;
-            for (int i = 0;i < PortalConfig::kGateCount;++i) {
+            for (int n = 0;n < PortalConfig::kGateCount;++n) {
+                const int i = (requestedTentacleSlot_ + n) % PortalConfig::kGateCount;
                 if (!gates_[i].IsActive() || gates_[i].IsRetracting()) { freeSlot = i;break; }
             }
             if (freeSlot < 0) {
                 // 描画枠がすべて使用中なら、非グリップの古い触手を再利用。
                 // 固定杭へのグリップと装甲フックは絶対に切断しない。
-                for (int i = 0;i < PortalConfig::kGateCount;++i)
+                for (int n = 0;n < PortalConfig::kGateCount;++n) {
+                    const int i = (requestedTentacleSlot_ + n) % PortalConfig::kGateCount;
                     if (!gates_[i].IsGrapple() && !gates_[i].IsArmorTether()) { freeSlot = i;break; }
+                }
             }
             if (freeSlot >= 0) {
                 const Vector2 origin = Sub(position_, Mul(aim_, 66.0f));
@@ -336,7 +346,8 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
         }
         else {
             int slot = -1;
-            for (int i = 0;i < PortalConfig::kGateCount;++i) {
+            for (int n = 0;n < PortalConfig::kGateCount;++n) {
+                const int i = (requestedTentacleSlot_ + n) % PortalConfig::kGateCount;
                 if (!gates_[i].IsActive() || gates_[i].IsRetracting()) { slot = i;break; }
             }
             if (slot >= 0) {
@@ -346,6 +357,7 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
                 // 背景杭もボスのポイントもワイヤー移動。剥離は到着時に起こす。
                 // これで本体とプロペラを掴んでもプレイヤー自身が引き寄せられる。
                 gates_[slot].Start(origin, shotDirection, anchor);
+                if (anchor) activeTentacleSlot_ = slot;
                 if (anchor) {
                     // 【射出方向の固定】Jを押してつないだ瞬間の杭方向を保存。
                     // グラップル中のA/D入力で、射出方向を変更する処理は一切行わない。
@@ -390,6 +402,10 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
     for (auto& gate : gates_) gate.Update();
     bool gripping = IsGripping();
     bool justLaunched = false;
+    if (grappleMode_ == 0 && payoutFrames_ > 0) {
+        payoutFrames_ = 0;
+        ReleaseAll(); activeGripAnchor_ = -1; gripping = false;
+    }
     gripStretch_ += ((gripping ? 1.0f : 0.0f) - gripStretch_) * 0.24f;
 
     if (gripping) {
@@ -400,6 +416,24 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
         // ================================================================
         for (auto& gate : gates_) {
             if (!gate.IsGripping()) continue;
+            if (payoutFrames_ > 0 && grappleMode_ == 1) {
+                // 交互パターン: 杭を越えた後も触手を保持。減速後に再び杭へ引く。
+                --payoutFrames_;
+                const Vector2 outDir = Unit(Sub(position_, gate.GetAnchor()));
+                const float outwardSpeed = PortalMath::Dot(velocity_, outDir);
+                const float dist = Length(Sub(position_, gate.GetAnchor()));
+                if ((outwardSpeed < 3.0f && payoutFrames_ < 42) || dist > 300.0f || payoutFrames_ == 0) {
+                    payoutFrames_ = 0;
+                    grappleAge_ = 0;
+                    grappleLastDistance_ = dist;
+                }
+                else {
+                    velocity_.y = Clamp(velocity_.y - PortalConfig::kGravity,
+                        -PortalConfig::kSourceMaxFallSpeed, PortalConfig::kJumpSpeed + 6.0f);
+                    justLaunched = true; // 移動入力による上書きを防ぐ
+                    break;
+                }
+            }
             ++grappleAge_;
             const Vector2 toAnchor = Sub(gate.GetAnchor(), position_);
             const float distance = Length(toAnchor);
@@ -449,6 +483,14 @@ void PortalPlayer::Update(const PortalCommands& input, const Vector2* anchors,
                 }
                 velocity_ = Limit(exitVelocity, PortalConfig::kGrappleExitMaxSpeed);
                 lastLaunchedAnchor_ = activeGripAnchor_;
+                if (grappleMode_ == 1 && activeGripAnchor_ >= 0) {
+                    payoutFrames_ = 48;
+                    grappleAge_ = 0;
+                    launchMomentumFrames_ = PortalConfig::kLaunchMomentumFrames;
+                    launchVisualFrames_ = PortalConfig::kLaunchVisualFrames;
+                    justLaunched = true;
+                    break;
+                }
                 activeGripAnchor_ = -1;
                 grappleAge_ = 0;
                 ReleaseAll();
@@ -586,54 +628,89 @@ bool PortalPlayer::TakeDamage(int damage, Vector2 source) {
 }
 
 void PortalPlayer::Draw() const {
-    for (const auto& gate : gates_) gate.Draw(position_);
+    for (int i = 0; i < PortalConfig::kGateCount; ++i) gates_[i].Draw(position_, i);
     const float sway = std::sin(animationFrame_ * 0.19f);
     const float runCycle = std::sin(animationFrame_ * 0.28f);
     const float speed = std::fabs(velocity_.x);
     const float bob = grounded_ ? std::fabs(runCycle) * Clamp(speed * 0.33f, 0.0f, 3.0f) : sway * 1.8f;
     const Vector2 drawCenter = Add(position_, { bodyLean_ * 0.55f,bob + landingBounce_ * 3.0f });
 
-    // 尾（BOXのみ）。移動速度・グリップで動く。
-    // 【軽量化】身体の尾BOXを33→18枚。揺れ方は同じ補間式。
-    for (int tail = 0;tail < 3;++tail) for (int i = 0;i < 6;++i) {
-        const float t = (i + 1) / 6.0f;
-        const float drift = std::sin(animationFrame_ * (0.16f + tail * 0.018f) - t * 4.0f + tail) * t * 10.0f;
-        const float motionDrag = velocity_.x * t * 1.35f;
-        Vector2 now = { drawCenter.x + (tail - 1) * 7.0f + drift - motionDrag,
-                     drawCenter.y - 12.0f - t * (24.0f + gripStretch_ * 10.0f) };
-        const float width = 8.0f * (1.0f - t) + 2.0f;
-        PortalDraw::Box(now, width, width, tail == 1 ? 0xA94BE2FF : 0x632086FF);
-    }
-
-    const float bodyWidth = 35.0f + landingBounce_ * 9.0f - gripStretch_ * 3.0f;
-    const float bodyHeight = 61.0f - landingBounce_ * 13.0f + gripStretch_ * 9.0f;
-    const bool hurtBlink = hurtFrames_ > 0 && ((hurtFrames_ / 4) % 2) == 0;
-    const unsigned int color = hurtBlink ? 0xFFFFFFFF :
-        (hitConfirmFrames_ > 0 ? 0xFFE3A3FF :
-            (armorPullFailFrames_ > 0 ? 0xFFA86CFF : 0xA83FDEFF)); // 命中時だけ本体の既存BOXを発光色に
-    const Vector2 body = Add(drawCenter, { 0.0f,6.0f + gripStretch_ * 2.0f });
-    // 回転攻撃中は「本体も2回転」する。見た目のみで当たり判定は変えない。
-    if (spinFrames_ > 0) {
-        const float progress = 1.0f - spinFrames_ / static_cast<float>(PortalConfig::kSpinFrames);
-        const float angle = progress * 12.56637f;
-        PortalDraw::RotatedBox(body, bodyWidth, bodyHeight, angle, 0xF0C8FFFF);
-        PortalDraw::RotatedBox(body, bodyWidth - 6.0f, bodyHeight - 6.0f, angle, color);
-        const Vector2 eye = Add(body, Rotate({ facing_ * 9.0f,7.0f }, angle));
-        PortalDraw::RotatedBox(eye, 3.0f, 23.0f, angle, 0xFFF0FFFF);
+    // 動画のキャラクター画像を優先して使う。サイズ64×64・横3コマ。
+    static const int idleTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_idle.png");
+    static const int walkTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_walk.png");
+    static const int jumpTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_jump.png");
+    static const int fallTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_fall.png");
+    int playerTexture = idleTexture;
+    if (!grounded_) playerTexture = velocity_.y > 0.0f ? jumpTexture : fallTexture;
+    else if (speed > 1.0f) playerTexture = walkTexture;
+    if (playerTexture >= 0) {
+        const Vector2i center = PortalDraw::ToScreen(drawCenter);
+        const int half = PortalDraw::Scale(32.0f);
+        const int frame = (animationFrame_ / 6) % 3;
+        // 原画の左右反転。画面座標の上下はDrawQuadの順に従う。
+        const int left = center.x - half, right = center.x + half;
+        const int x0 = facing_ > 0 ? left : right;
+        const int x1 = facing_ > 0 ? right : left;
+        Novice::DrawQuad(x0, center.y - half, x1, center.y - half,
+            x0, center.y + half, x1, center.y + half,
+            frame * 64, 0, 64, 64, playerTexture, 0xFFFFFFFFu);
     }
     else {
-        // 【グラップル中の軽い回転】元の身体BOXを揺らすだけ。描画を増やさない。
-        const float bodyAngle = IsGripping()
-            ? (grappleSpinTick_ * 0.24f + airTilt_ * 0.3f) : airTilt_;
-        if (std::fabs(bodyAngle) > 0.015f) {
-            PortalDraw::RotatedBox(body, bodyWidth, bodyHeight, bodyAngle, 0xF0C8FFFF);
-            PortalDraw::RotatedBox(body, bodyWidth - 6.0f, bodyHeight - 6.0f, bodyAngle, color);
-            PortalDraw::RotatedBox(Add(body, Rotate({ facing_ * (9.0f + sway),7.0f }, bodyAngle)), 3.0f, 23.0f, bodyAngle, 0xFFF0FFFF);
+        // 尾（BOXのみ）。移動速度・グリップで動く。
+        // 【軽量化】身体の尾BOXを33→18枚。揺れ方は同じ補間式。
+        for (int tail = 0;tail < 3;++tail) for (int i = 0;i < 6;++i) {
+            const float t = (i + 1) / 6.0f;
+            const float drift = std::sin(animationFrame_ * (0.16f + tail * 0.018f) - t * 4.0f + tail) * t * 10.0f;
+            const float motionDrag = velocity_.x * t * 1.35f;
+            Vector2 now = { drawCenter.x + (tail - 1) * 7.0f + drift - motionDrag,
+                         drawCenter.y - 12.0f - t * (24.0f + gripStretch_ * 10.0f) };
+            const float width = 8.0f * (1.0f - t) + 2.0f;
+            PortalDraw::Box(now, width, width, tail == 1 ? 0xA94BE2FF : 0x632086FF);
+        }
+
+        const float bodyWidth = 35.0f + landingBounce_ * 9.0f - gripStretch_ * 3.0f;
+        const float bodyHeight = 61.0f - landingBounce_ * 13.0f + gripStretch_ * 9.0f;
+        const bool hurtBlink = hurtFrames_ > 0 && ((hurtFrames_ / 4) % 2) == 0;
+        const unsigned int color = hurtBlink ? 0xFFFFFFFF :
+            (hitConfirmFrames_ > 0 ? 0xFFE3A3FF :
+                (armorPullFailFrames_ > 0 ? 0xFFA86CFF : 0xA83FDEFF)); // 命中時だけ本体の既存BOXを発光色に
+        const Vector2 body = Add(drawCenter, { 0.0f,6.0f + gripStretch_ * 2.0f });
+        // 回転攻撃中は「本体も2回転」する。見た目のみで当たり判定は変えない。
+        if (spinFrames_ > 0) {
+            const float progress = 1.0f - spinFrames_ / static_cast<float>(PortalConfig::kSpinFrames);
+            const float angle = progress * 12.56637f;
+            PortalDraw::RotatedBox(body, bodyWidth, bodyHeight, angle, 0xF0C8FFFF);
+            PortalDraw::RotatedBox(body, bodyWidth - 6.0f, bodyHeight - 6.0f, angle, color);
+            const Vector2 eye = Add(body, Rotate({ facing_ * 9.0f,7.0f }, angle));
+            PortalDraw::RotatedBox(eye, 3.0f, 23.0f, angle, 0xFFF0FFFF);
         }
         else {
-            PortalDraw::Box(body, bodyWidth, bodyHeight, 0xF0C8FFFF);
-            PortalDraw::Box(body, bodyWidth - 6.0f, bodyHeight - 6.0f, color);
-            PortalDraw::Box(Add(body, { facing_ * (9.0f + sway),7.0f }), 3.0f, 23.0f, 0xFFF0FFFF);
+            // 【グラップル中の軽い回転】元の身体BOXを揺らすだけ。描画を増やさない。
+            const float bodyAngle = IsGripping()
+                ? (grappleSpinTick_ * 0.24f + airTilt_ * 0.3f) : airTilt_;
+            if (std::fabs(bodyAngle) > 0.015f) {
+                PortalDraw::RotatedBox(body, bodyWidth, bodyHeight, bodyAngle, 0xF0C8FFFF);
+                PortalDraw::RotatedBox(body, bodyWidth - 6.0f, bodyHeight - 6.0f, bodyAngle, color);
+                PortalDraw::RotatedBox(Add(body, Rotate({ facing_ * (9.0f + sway),7.0f }, bodyAngle)), 3.0f, 23.0f, bodyAngle, 0xFFF0FFFF);
+            }
+            else {
+                PortalDraw::Box(body, bodyWidth, bodyHeight, 0xF0C8FFFF);
+                PortalDraw::Box(body, bodyWidth - 6.0f, bodyHeight - 6.0f, color);
+                PortalDraw::Box(Add(body, { facing_ * (9.0f + sway),7.0f }), 3.0f, 23.0f, 0xFFF0FFFF);
+            }
+        }
+
+    }
+    // 動画と同じ左右2色のL/R表示（32×32コマ）。
+    static const int lrTexture = Novice::LoadTexture("./resources/texture/player/video_sample/ui_lr.png");
+    if (lrTexture >= 0) {
+        for (int side = 0; side < 2; ++side) {
+            const Vector2 world = Add(position_, { side == 0 ? -28.0f : 28.0f, -37.0f });
+            const Vector2i p = PortalDraw::ToScreen(world);
+            const int half = PortalDraw::Scale(12.0f);
+            const unsigned int tint = side == 0 ? 0xFF78BCFFu : 0x62E07AFFu;
+            Novice::DrawQuad(p.x - half, p.y - half, p.x + half, p.y - half, p.x - half, p.y + half, p.x + half, p.y + half,
+                side * 32, 0, 32, 32, lrTexture, tint);
         }
     }
 
@@ -715,4 +792,11 @@ void PortalPlayer::ApplyWakeBlast(Vector2 bossPosition, float pushX, float downS
     grounded_ = false;
     coyoteFrames_ = 0;
     hitConfirmFrames_ = 12;
+}
+
+void PortalPlayer::SyncSamplePose(Vector2 pos, Vector2 vel, bool gripping, bool pulling) {
+    position_ = pos;velocity_ = vel;
+    sampleGripping_ = gripping;samplePulling_ = pulling;
+    grounded_ = (pos.y <= 128.1f);
+    if (hurtFrames_ > 0)--hurtFrames_;
 }

@@ -69,7 +69,8 @@ public:
 	}
 	bool IsMashActive() const { return state_ == BossState::ArmorStun; }
 	bool IsArmorFalling() const { return state_ == BossState::ArmorFalling || state_ == BossState::ArmorImpact; }
-	bool HasRebuiltArmor() const { return armorRebuilt_; }
+	bool IsCoasterStage() const { return coasterStage_; }
+	void StartCoasterStage();
 
 	void NoteWireMotion(bool usingWire); // プレイヤーのワイヤー使用をAIへ報告
 	Vector2 GetPosition() const { return position_; }
@@ -121,6 +122,7 @@ private:
 
 	int hp_ = kMaxHp;
 	// 第2段階は一度きり。再生中の連打でHP半分以下になったら強制復活する。
+	bool coasterStage_ = false;
 	bool armorRebuilt_ = false;
 	bool rebuildOnWake_ = false;
 	int mashCount_ = 0;
@@ -169,21 +171,16 @@ private:
 	// コマ・ヨーヨーを共通の物理オブジェクト一個で表現する。
 	Vector2 toyPosition_ = {}, toyVelocity_ = {};
 	int toyDirection_ = -1;
-	bool toyReturning_ = false;
-	bool toyLanded_ = false;
-	float toyOriginX_ = 0.0f; // コマが一往復したら帰還する判定に使う
 	float toyAimY_ = 150.0f; // ヨーヨーが狙う高さ（攻撃開始時に固定）
 	bool toyHasHitPlayer_ = false;
-	// コマは「落下→走行→壁で反射→発射地点へ帰還」で制御する。
-	enum class TopPhase { Drop, Roll, Return };
-	TopPhase topPhase_ = TopPhase::Drop;
+	bool topLanded_ = false;
+	int topWallHits_ = 0;
 	int topElapsed_ = 0;
-	float topLaunchX_ = 0.0f;
 
 
 	void UpdateFlight(); // 予兆・攻撃以外の空中移動
 	void ChangeState(BossState next);
-	void BeginArmorRebuild(); // ネジ4本・外装を元通りにし、吹き飛ばしを開始
+	void BeginArmorRebuild();
 
 	void ChangePressPhase(PressPhase next);
 	void ChooseAttack();

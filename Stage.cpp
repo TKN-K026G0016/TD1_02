@@ -29,13 +29,35 @@
 static CreatorGameRuntime::Runtime creatorRuntime;
 static Boss boss;
 static PortalArena arena;
+enum class StageId { Copter = 1, Coaster = 2 };
+static StageId currentStage = StageId::Copter;
 static bool stageCleared = false;
 static BossBattleSettings liveBattleConfig;
 static int reloadIndicatorFrames = 0;
 static bool f8Prev = false;
+static bool f7Prev = false;
+static bool spacePrev = false;
 static int tutorialFrame = 0;
 static int clearDelayFrames = 0; // ボス撃破後、短い倒れる演出のあとクリア
 static constexpr Vector2 kGravityScale = { 0.0f,-1.2f };
+static void ResetStageBattle(StageId stage) {
+    currentStage = stage;
+    arena.Initialize();
+    arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
+    arena.SetBattleSettings(liveBattleConfig);
+    boss.SetBattleSettings(liveBattleConfig);
+    boss.Initialize({ liveBattleConfig.bossSpawn.x, liveBattleConfig.bossSpawn.y });
+    boss.SetTarget(&arena.GetPlayerPosition());
+    const bool coaster = stage == StageId::Coaster;
+    if (coaster) boss.StartCoasterStage();
+    arena.SetCoasterStage(coaster);
+    stageCleared = false;
+    tutorialFrame = 0;
+    clearDelayFrames = 0;
+    SetBossMashCamera(false, 640.0f, 360.0f);
+    SetCameraFollowY(360.0f);
+}
+
 #ifdef USE_IMGUI
 static bool showBattleEditor = true;
 static bool f9Prev = false;
@@ -43,16 +65,7 @@ static bool battleEditorDirty = false;
 static char battleEditorMessage[128] = "Change values, then Save";
 static bool ResetBossBattleFromEditor() {
     if (!liveBattleConfig.Valid()) return false;
-    arena.SetBattleSettings(liveBattleConfig);
-    boss.SetBattleSettings(liveBattleConfig);
-    arena.Initialize();
-    arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
-    arena.SetBattleSettings(liveBattleConfig);
-    boss.Initialize({ liveBattleConfig.bossSpawn.x, liveBattleConfig.bossSpawn.y });
-    boss.SetTarget(&arena.GetPlayerPosition());
-    stageCleared = false;
-    clearDelayFrames = 0;
-    SetBossMashCamera(false, 640.0f, 360.0f);
+    ResetStageBattle(currentStage);
     return true;
 }
 
@@ -60,7 +73,7 @@ static bool ResetBossBattleFromEditor() {
 static void DrawBossBattleEditor() {
     if (!showBattleEditor) return;
     ImGui::SetNextWindowSize(ImVec2(425, 625), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Stage 1 - Boss Battle Editor", &showBattleEditor)) { ImGui::End(); return; }
+    if (!ImGui::Begin("Boss Battle Editor", &showBattleEditor)) { ImGui::End(); return; }
     ImGui::TextUnformatted("Edit while playing / F8: reload saved settings");
     if (ImGui::CollapsingHeader("Creator editor integration")) {
         ImGui::Checkbox("Show stage tiles", &creatorRuntime.showStage);
@@ -83,7 +96,7 @@ static void DrawBossBattleEditor() {
     if (ImGui::CollapsingHeader("0. HP and damage", ImGuiTreeNodeFlags_DefaultOpen)) {
         valueI("Boss maximum HP", &liveBattleConfig.bossMaxHp, 1, 10000);
         valueI("Player maximum HP", &liveBattleConfig.playerMaxHp, 1, 1000);
-        valueI("Phase 2 trigger HP (%)", &liveBattleConfig.phase2HpPercent, 1, 99);
+        valueI("Stage 1 armor rebuild HP (%)", &liveBattleConfig.phase2HpPercent, 1, 99);
         ImGui::Separator();
         valueI("Normal attack damage", &liveBattleConfig.normalDamage, 0, 500);
         valueI("Spin attack damage", &liveBattleConfig.spinDamage, 0, 500);
@@ -101,11 +114,11 @@ static void DrawBossBattleEditor() {
             boss.SetCurrentHpForEditor(bossHpEditor);
         if (ImGui::SliderInt("Set player current HP", &playerHpEditor, 1, arena.GetPlayer().GetMaxHp()))
             arena.GetPlayer().SetCurrentHpForEditor(playerHpEditor);
-        if (ImGui::Button("Set boss HP near phase 2")) {
+        if (ImGui::Button("Set boss HP near armor rebuild")) {
             const int threshold = (boss.GetMaxHp() * liveBattleConfig.phase2HpPercent) / 100;
             boss.SetCurrentHpForEditor(threshold < 1 ? 1 : threshold);
         }
-        ImGui::TextWrapped("Current HP test only. To trigger phase 2, damage the boss after setting HP. Saved TXT stores maximum HP and damage.");
+        ImGui::TextWrapped("Current HP test only. In Stage 1, hit the boss after setting HP to test armor rebuild. Saved TXT stores maximum HP and damage.");
     }
     if (ImGui::CollapsingHeader("1. Boss movement", ImGuiTreeNodeFlags_DefaultOpen)) {
         valueF("Fly speed", &liveBattleConfig.flightSpeed, 0.1f, 15.0f);
@@ -134,7 +147,7 @@ static void DrawBossBattleEditor() {
         valueI("Top duration (legacy)", &liveBattleConfig.topDuration, 30, 300);
         valueF("Top gravity", &liveBattleConfig.topGravity, 0.1f, 8.0f);
         valueF("Top floor bounce", &liveBattleConfig.topBounceHeight, 0.0f, 30.0f);
-        valueF("Top return acceleration", &liveBattleConfig.topReturnAccel, 0.005f, 0.5f);
+        valueF("Top acceleration after bounce", &liveBattleConfig.topReturnAccel, 0.005f, 0.5f);
         valueF("Top hit radius", &liveBattleConfig.topHitRadius, 20.0f, 128.0f);
         valueI("Top failsafe lifetime", &liveBattleConfig.topMaxLifetime, 180, 1800);
         ImGui::TextWrapped("Top: DROP -> FLOOR ROLL -> ONE WALL BOUNCE -> RETURN. Old duration no longer cuts it short.");
@@ -225,19 +238,7 @@ void InitStage(void) {
     // 【注目】【設定読込】エディターの設定が無い場合は既定値を使う。
     liveBattleConfig.Load();
     creatorRuntime.Reload();
-    // 【注目】【プレイヤー初期化】ボスより先に初期化して、プレイヤー位置への参照を有効にする。
-    arena.Initialize();
-    arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
-    arena.SetBattleSettings(liveBattleConfig);
-    boss.SetBattleSettings(liveBattleConfig);
-    boss.Initialize({ liveBattleConfig.bossSpawn.x,liveBattleConfig.bossSpawn.y });
-    // 【注目】【重要：ポインタ】毎フレーム変わるプレイヤーの位置をボスAIへ渡す。
-    boss.SetTarget(&arena.GetPlayerPosition());
-    stageCleared = false;
-    tutorialFrame = 0;
-    clearDelayFrames = 0;
-    SetBossMashCamera(false, 640.0f, 360.0f);
-    SetCameraFollowY(360.0f); // 戦闘中は固定画面
+    ResetStageBattle(StageId::Copter);
 }
 
 // ------------------------------------------------------------------------
@@ -255,10 +256,20 @@ void UpdateStage(void) {
     if (f9Now && !f9Prev) showBattleEditor = !showBattleEditor;
     f9Prev = f9Now;
 #endif
+    const bool f7Now = liveKeys[DIK_F7] != 0;
+    const bool spaceNow = liveKeys[DIK_SPACE] != 0;
+    const bool enterCoaster = (f7Now && !f7Prev && currentStage == StageId::Copter) ||
+        (spaceNow && !spacePrev && stageCleared && currentStage == StageId::Copter);
+    f7Prev = f7Now;
+    spacePrev = spaceNow;
+    if (enterCoaster) {
+        ResetStageBattle(StageId::Coaster);
+        return;
+    }
     const bool f8Now = liveKeys[DIK_F8] != 0;
     if (f8Now && !f8Prev) {
         BossBattleSettings next;
-        if (next.Load()) { liveBattleConfig = next;InitStage();reloadIndicatorFrames = 120; }
+        if (next.Load()) { liveBattleConfig = next; creatorRuntime.Reload(); ResetStageBattle(currentStage); reloadIndicatorFrames = 120; }
         else reloadIndicatorFrames = -120;
     }
     f8Prev = f8Now;
@@ -283,15 +294,7 @@ void UpdateStage(void) {
     }
     arena.SetBossExtraTargets(extraBossPoints, extraBossEnabled);
     if (arena.Update()) {
-        arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
-        boss.SetBattleSettings(liveBattleConfig);
-        boss.Initialize({ liveBattleConfig.bossSpawn.x,liveBattleConfig.bossSpawn.y });
-        // 【注目】【重要：ポインタ】毎フレーム変わるプレイヤーの位置をボスAIへ渡す。
-        boss.SetTarget(&arena.GetPlayerPosition());
-        stageCleared = false;
-        tutorialFrame = 0;
-        clearDelayFrames = 0;
-        SetCameraFollowY(360.0f);
+        ResetStageBattle(currentStage);
         return;
     }
     ++tutorialFrame;
@@ -330,6 +333,12 @@ void UpdateStage(void) {
         boss.SetTargetMotion(player.GetVelocity(), player.IsGrounded(), usingWire);
         boss.NoteWireMotion(usingWire);
         boss.Update();
+        if (boss.IsCoasterStage()) {
+            arena.UpdateStage2(boss.GetPosition(), boss.GetHp(), boss.GetMaxHp());
+            if (arena.Stage2CounterReady() && (boss.GetState() == BossState::Idle || boss.IsDizzy())) {
+                if (boss.TakeDamage(30, true, false, true)) arena.ConsumeStage2Counter();
+            }
+        }
         // Update中に墜落→連打へ切り替わるので、カメラ状態を毎フレーム更新。
         SetBossMashCamera(boss.IsMashActive(), boss.GetPosition().x, boss.GetPosition().y);
         // 【スタン復帰の吹き飛ばし】1回だけ起きるイベントを消費。
@@ -367,6 +376,7 @@ void UpdateStage(void) {
         if (!boss.IsDefeated()) {
             Vector2 source = {};
             int hit = boss.TryHitPlayer(player.GetPosition(), 24.0f, &source);
+            if (hit <= 0 && boss.IsCoasterStage()) hit = arena.Stage2HitPlayer(player.GetPosition(), &source);
             if (hit > 0) {
                 const int adjustedDamage = (hit * liveBattleConfig.incomingDamagePercent + 50) / 100;
                 if (adjustedDamage > 0) player.TakeDamage(adjustedDamage, source);
@@ -413,7 +423,12 @@ void DrawStage(void) {
     for (int i = 0; i < Boss::kAccessoryGripCount - 1; ++i) {
         if (boss.IsAccessoryGripEnabled(i)) { hasAccessory = true; break; }
     }
-    if (hasAccessory) {
+    if (boss.IsCoasterStage() && !boss.IsDefeated()) {
+        Novice::ScreenPrintf(18, 145, "STAGE 2: COASTER / GRAPPLE ABOVE THE RUSH!");
+        if (boss.GetState() == BossState::Dizzy)
+            Novice::ScreenPrintf(18, 168, "COUNTER NOW! AIM FOR THE EYE!");
+    }
+    else if (hasAccessory) {
         Novice::ScreenPrintf(18, 145, "STEP 1: REMOVE JETS AND PIPES!");
     }
     else if (boss.GetArmorPlates() > 0) {
@@ -431,10 +446,10 @@ void DrawStage(void) {
         const char* guide = "DODGE!";
         // 【分岐表】現在の状態/攻撃種類に応じて、実行する処理を分ける。
         switch (boss.GetSelectedAttack()) {
-        case BossAttack::Rush: guide = "RUSH: FLOOR LANE - JUMP / WIRE!";break;
+        case BossAttack::Rush: guide = boss.IsCoasterStage() ? "RUSH: GRAPPLE UP NOW!" : "RUSH: FLOOR LANE - JUMP / WIRE!";break;
         case BossAttack::Shot: guide = "SHOT: TWO TRIPLE VOLLEYS - KEEP MOVING!";break;
         case BossAttack::Press:guide = "PRESS: LEAVE THE RED FLOOR MARK!";break;
-        case BossAttack::Top:  guide = "TOP: BOUNCES AT WALL - WATCH RETURN!";break;
+        case BossAttack::Top:  guide = "TOP: JUMP OVER THE SPINNING TOP!";break;
         case BossAttack::YoYo: guide = "YOYO: OUT AND BACK - CHANGE HEIGHT!";break;
         }
         Novice::ScreenPrintf(18, 168, "%s", guide);
@@ -461,8 +476,11 @@ void DrawStage(void) {
         Novice::ScreenPrintf(975, 155, "CORE BONUS DAMAGE!");
     if (stageCleared) {
         Novice::DrawBox(370, 258, 545, 140, 0, 0x161B27DD, kFillModeSolid);
-        Novice::ScreenPrintf(555, 300, "STAGE 1 CLEAR!");
-        Novice::ScreenPrintf(518, 330, "PRESS R TO RETRY");
+        Novice::ScreenPrintf(555, 300, "STAGE %d CLEAR!", static_cast<int>(currentStage));
+        if (currentStage == StageId::Copter)
+            Novice::ScreenPrintf(475, 330, "SPACE: STAGE 2    R: RETRY STAGE 1");
+        else
+            Novice::ScreenPrintf(518, 330, "R: RETRY STAGE 2");
     }
     else if (arena.GetPlayer().IsDefeated()) {
         Novice::DrawBox(370, 258, 545, 140, 0, 0x161B27DD, kFillModeSolid);

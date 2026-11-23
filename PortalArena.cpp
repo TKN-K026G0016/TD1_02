@@ -7,12 +7,41 @@
 // ============================================================================
 
 #include "PortalArena.h"
+#include "ExactPlayerBattle.h"
 #include "PortalDraw.h"
 #include "PortalMath.h"
 #include <Novice.h>
 #include <cmath>
 
 using namespace PortalMath;
+namespace {
+    constexpr Vector2 kCoasterAnchors[] = { {155, 495}, {480, 525}, {800, 525}, {1125, 495} };
+    constexpr int kCoasterAnchorCount = sizeof(kCoasterAnchors) / sizeof(kCoasterAnchors[0]);
+
+    void DrawCoaster(int frame) {
+        PortalDraw::Box({ 640, 360 }, 1500, 800, 0x19364CFF);
+        const int farShift = (frame % 240) * 3;
+        for (int i = -1; i < 10; ++i) {
+            const float x = static_cast<float>(i * 240 - farShift);
+            const float height = 100.0f + ((i + 1) % 3) * 40.0f;
+            PortalDraw::Box({ x, 70.0f + height * 0.5f }, 160, height, 0x28526AFF);
+        }
+        const int railShift = (frame % 10) * 12;
+        PortalDraw::Box({ 640, 15 }, 1400, 7, 0x86ACB5FF);
+        for (int i = 0; i < 12; ++i) {
+            const float x = static_cast<float>(i * 120 - railShift);
+            PortalDraw::Line({ x, 15 }, { x - 38.0f, -7 }, 0x43667DFF);
+        }
+        PortalDraw::Box({ 640, 44 }, 1270, 34, 0x2B3555FF);
+        PortalDraw::Box({ 640, 62 }, 1270, 5, 0xFFBB62FF);
+        for (int i = 0; i < 8; ++i) {
+            const float x = 80.0f + 160.0f * i;
+            PortalDraw::Box({ x, 44 }, 110, 16, 0x52658AFF);
+            PortalDraw::Circle({ x, 21 }, 12.0f, 0x141C30FF);
+        }
+        PortalDraw::Line({ 55, 515 }, { 1225, 515 }, 0x648DA4FF);
+    }
+}
 // ------------------------------------------------------------------------
 // 【関数】PortalArena::Initialize()
 // 何をする？ オブジェクトを使い始めるときに値を初期状態へ戻す。リトライ時にも重要。
@@ -20,7 +49,9 @@ using namespace PortalMath;
 // ------------------------------------------------------------------------
 void PortalArena::Initialize() {
     player_.Initialize({ 420.0f,110.0f });
-    frame_ = 0;connected_ = false;mashPulse_ = false;
+    ExactPlayerBattle::Reset();
+    coasterStage_ = false;
+    frame_ = 0;stage2_.Reset();connected_ = false;mashPulse_ = false;
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) { armorPointEnabled_[i] = false;armorPoints_[i] = {}; }
     for (int i = 0;i < kExtraBossPoints;++i) { extraPointEnabled_[i] = false;extraPoints_[i] = {}; }
 }
@@ -51,6 +82,8 @@ void PortalArena::SetBossExtraTargets(const Vector2 points[kExtraBossPoints], co
 // 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
 // ------------------------------------------------------------------------
 bool PortalArena::Update() {
+    const int anchorCount = coasterStage_ ? kCoasterAnchorCount : anchorCount_;
+    const Vector2* anchors = anchors_;
     // 【注目】【入力取得】キーボード／ゲームパッドを共通形式へ変換。
     const PortalCommands commands = input_.Read();
     connected_ = commands.connected;
@@ -60,18 +93,29 @@ bool PortalArena::Update() {
     // 取り外した外装は巨大な距離へ追い出して選択できなくする。
     // 【注目】【目標配列】前半＝移動杭、後半＝ボスのネジ。固定杭の個数を境界としてPlayerに渡す。
     Vector2 points[kMaxAnchors + BossBattleSettings::kArmorHooks + kExtraBossPoints] = {};
-    for (int i = 0;i < anchorCount_;++i) points[i] = anchors_[i];
-    for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) points[anchorCount_ + i] = armorPointEnabled_[i]
+    for (int i = 0;i < anchorCount;++i) points[i] = coasterStage_ ? stage2_.Anchor(i) : anchors[i];
+    for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) points[anchorCount + i] = armorPointEnabled_[i]
         ? armorPoints_[i] : Vector2{ 100000.0f,100000.0f };
     // ジェットとパイプも部位剥がしの対象として数える。
     // 目と本体はBoss側で破壊不可にしている。
     // 【プレイヤー更新】敵に倒されていなければ物理・攻撃・触手を進める。
     for (int i = 0; i < kExtraBossPoints; ++i)
-        points[anchorCount_ + BossBattleSettings::kArmorHooks + i] = extraPointEnabled_[i]
+        points[anchorCount + BossBattleSettings::kArmorHooks + i] = extraPointEnabled_[i]
         ? extraPoints_[i] : Vector2{ 100000.0f,100000.0f };
-    if (!player_.IsDefeated()) player_.Update(commands, points,
-        anchorCount_ + BossBattleSettings::kArmorHooks + kExtraBossPoints,
-        anchorCount_, BossBattleSettings::kArmorHooks + kExtraBossPoints);
+    // Run the exact source physical simulation once, not PortalPlayer's old physics.
+    static bool f2Prev = false;
+    char modeKeys[256] = {}; Novice::GetHitKeyStateAll(modeKeys);
+    const bool f2Now = modeKeys[DIK_F2] != 0;
+    if (f2Now && !f2Prev) ExactPlayerBattle::SetAlternate(!ExactPlayerBattle::IsAlternate());
+    f2Prev = f2Now;
+    if (!player_.IsDefeated()) {
+        ExactPlayerBattle::Update(points, anchorCount + BossBattleSettings::kArmorHooks + kExtraBossPoints);
+        const auto snap = ExactPlayerBattle::GetSnapshot();
+        player_.SyncSamplePose(snap.position, snap.velocity, snap.gripping, snap.pulling);
+        // Sample stake removal is bridged to the boss armor request.
+        if (snap.peeledStake >= anchorCount)
+            player_.QueueSampleArmorPeel(snap.peeledStake - anchorCount);
+    }
     ++frame_;
     return false;
 }
@@ -81,13 +125,25 @@ bool PortalArena::Update() {
 // 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
 // ------------------------------------------------------------------------
 void PortalArena::DrawWorld() const {
+    const int anchorCount = coasterStage_ ? kCoasterAnchorCount : anchorCount_;
+    const Vector2* anchors = anchors_;
     // 【描画制限対策】固定アリーナは背景1BOX＋床2BOXのみ。
     // 上空の出口や高い壁は置かず、ワイヤーを「攻撃回避」に使わせる。
-    PortalDraw::Box({ 640.0f,360.0f }, 1500.0f, 800.0f, 0xAECBD7FF);
-    PortalDraw::Box({ 640.0f,26.0f }, 1270.0f, 76.0f, 0x31364EFF);
-    PortalDraw::Box({ 640.0f,64.0f }, 1270.0f, 5.0f, 0xA2A8C4FF);
-    for (int i = 0;i < anchorCount_;++i) {
-        const Vector2 a = anchors_[i];
+    if (coasterStage_) {
+        DrawCoaster(frame_);
+        if (stage2_.IsSplit()) {
+            PortalDraw::Box({ 640.0f,44.0f }, 180.0f, 52.0f, 0x19364CFF);
+            PortalDraw::Box({ 535.0f,44.0f }, 14.0f, 60.0f, 0xEB687AFF);
+            PortalDraw::Box({ 745.0f,44.0f }, 14.0f, 60.0f, 0xEB687AFF);
+        }
+    }
+    else {
+        PortalDraw::Box({ 640.0f,360.0f }, 1500.0f, 800.0f, 0xAECBD7FF);
+        PortalDraw::Box({ 640.0f,26.0f }, 1270.0f, 76.0f, 0x31364EFF);
+        PortalDraw::Box({ 640.0f,64.0f }, 1270.0f, 5.0f, 0xA2A8C4FF);
+    }
+    for (int i = 0;i < anchorCount;++i) {
+        const Vector2 a = coasterStage_ ? stage2_.Anchor(i) : anchors[i];
         const float pulse = 4.0f + 2.5f * std::sin(frame_ * 0.13f + i);
         PortalDraw::Box(a, 32.0f + pulse, 32.0f + pulse, 0x734DC3FF);
         PortalDraw::Box(a, 19.0f, 19.0f, 0xFFD0AAFF);
@@ -102,20 +158,20 @@ void PortalArena::DrawWorld() const {
     // 【ボス外装の取っ掛かり】照準が合ったネジだけ白い四角で強調する。
     // 通常はボス自身が十字を描くので追加描画は選択中の2BOXだけ。
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) if (armorPointEnabled_[i] &&
-        player_.GetSelectedAnchor() == anchorCount_ + i) {
+        player_.GetSelectedAnchor() == anchorCount + i) {
         const Vector2 p = armorPoints_[i];
         PortalDraw::Box({ p.x,p.y + 13.0f }, 24, 3, 0xFFFFFFFF);
         PortalDraw::Box({ p.x,p.y - 13.0f }, 24, 3, 0xFFFFFFFF);
     }
     const int idx = player_.GetSelectedAnchor();
-    const int armorEnd = anchorCount_ + BossBattleSettings::kArmorHooks;
+    const int armorEnd = anchorCount + BossBattleSettings::kArmorHooks;
     const int total = armorEnd + kExtraBossPoints;
     if (idx >= 0 && idx < total) {
         Vector2 p = {};
         bool valid = false;
-        if (idx < anchorCount_) { p = anchors_[idx]; valid = true; }
+        if (idx < anchorCount) { p = coasterStage_ ? stage2_.Anchor(idx) : anchors[idx]; valid = true; }
         else if (idx < armorEnd) {
-            const int part = idx - anchorCount_;
+            const int part = idx - anchorCount;
             p = armorPoints_[part];valid = armorPointEnabled_[part];
         }
         else {
@@ -139,7 +195,8 @@ void PortalArena::DrawWorld() const {
 // ------------------------------------------------------------------------
 void PortalArena::DrawPlayer() const {
     // ボスの描画後に呼ぶと、プレイヤーと触手がボスより手前に描かれる。
-    player_.Draw();
+    if (coasterStage_) stage2_.Draw();
+    ExactPlayerBattle::Draw();
 }
 
 // ------------------------------------------------------------------------
@@ -159,8 +216,13 @@ void PortalArena::Draw() const {
 // 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
 // ------------------------------------------------------------------------
 void PortalArena::DrawHUD() const {
-    Novice::ScreenPrintf(18, 12, "LEFT: MOVE/UP JUMP  RIGHT: 8-WAY ATTACK  HOLD RIGHT ON LOCK: WIRE");
-    Novice::ScreenPrintf(18, 32, "GROUND RUSH! JUMP / WIRE OVER IT -> BOSS STUN -> ATTACK!");
+    if (coasterStage_) stage2_.DrawHud();
+    Novice::ScreenPrintf(18, 12, "A/D MOVE  SPACE JUMP  Q/J LEFT ARM  E/K RIGHT ARM  SHIFT RELEASE");
+    Novice::ScreenPrintf(18, 190, "F2 MODE: %s / 2 TENTACLES",
+        ExactPlayerBattle::IsAlternate() ? "ALTERNATE" : "NON ALTERNATE");
+    Novice::ScreenPrintf(18, 32, "%s", coasterStage_
+        ? "HOLD RIGHT ON AN UPPER GRIP POINT TO DODGE -> COUNTER"
+        : "GROUND RUSH! JUMP / WIRE OVER IT -> BOSS STUN -> ATTACK!");
     // 四隅のネジは狙って接続した時点で1つ解除。4個目で外装がめくれる。
     const char* status = player_.IsPullingArmor() ? "ARMOR SCREW: LOCK -> REMOVE" :
         player_.IsAutoLaunching() ? "WIRE LAUNCH!" :
@@ -168,9 +230,10 @@ void PortalArena::DrawHUD() const {
         player_.IsSpinning() ? "AIR SPIN ATTACK" :
         player_.GetSelectedAnchor() >= 0 ? "LOCK: HOLD RIGHT STICK -> AUTO GRAPPLE" : "RIGHT STICK: INSTANT TENTACLE ATTACK";
     const int target = player_.GetSelectedAnchor();
-    if (target >= anchorCount_ && target < anchorCount_ + BossBattleSettings::kArmorHooks)
+    const int anchorCount = coasterStage_ ? kCoasterAnchorCount : anchorCount_;
+    if (target >= anchorCount && target < anchorCount + BossBattleSettings::kArmorHooks)
         status = "BOSS PART: GRAPPLE TO PEEL / LAUNCH";
-    else if (target >= anchorCount_ + BossBattleSettings::kArmorHooks)
+    else if (target >= anchorCount + BossBattleSettings::kArmorHooks)
         status = "BOSS POINT: GRAPPLE TO MOVE";
     Novice::ScreenPrintf(18, 52, "%s  /  %s", connected_ ? "GAMEPAD" : "KEYBOARD", status);
     if (player_.IsPullingArmor()) {
@@ -182,4 +245,14 @@ void PortalArena::DrawHUD() const {
             0x65E4A5FF : 0xFFB468FF;
         Novice::DrawBox(18, 72, static_cast<int>(180 * progress), 8, 0, color, kFillModeSolid);
     }
+}
+
+// Stage 2 only. No changes to sample player movement or tentacle rendering.
+void PortalArena::UpdateStage2(Vector2 bossPosition, int bossHp, int bossMaxHp) {
+    if (!coasterStage_) return;
+    stage2_.Update(player_.GetPosition(), bossPosition, bossHp, bossMaxHp,
+        player_.IsGripping() || player_.HasWireMomentum());
+}
+int PortalArena::Stage2HitPlayer(Vector2 player, Vector2* source) {
+    return coasterStage_ ? stage2_.CheckHit(player, 24.0f, source) : 0;
 }

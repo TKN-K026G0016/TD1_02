@@ -18,7 +18,7 @@ public:
     bool IsRetracting() const { return state_ == TentacleState::Retracting; }
     void FollowOwner(Vector2 playerPosition);
     void Release();
-    void Draw(Vector2 playerPosition) const;
+    void Draw(Vector2 playerPosition, int slot) const;
 
     bool IsActive() const { return state_ != TentacleState::Inactive; }
     // 接続した瞬間から巻き取り開始：先端の見た目が伸びている間も移動できる（描画追加なし）。

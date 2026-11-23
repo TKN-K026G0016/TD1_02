@@ -129,7 +129,54 @@ bool PortalTentacle::HitsCircle(Vector2 target, float radius) const {
     return PortalMath::Dot(delta, delta) <= hitRadius * hitRadius;
 }
 
-void PortalTentacle::Draw(Vector2 playerPosition) const {
+void PortalTentacle::Draw(Vector2 playerPosition, int slot) const {
+    // 動画サンプルの画像を使用。ピンク(L) / 緑(R)の2本を識別する。
+    static const int gateTexture = Novice::LoadTexture("./resources/texture/player/video_sample/gate.png");
+    static const int tentacleTexture = Novice::LoadTexture("./resources/texture/player/video_sample/tentacle.png");
+    if (IsActive() && gateTexture >= 0 && tentacleTexture >= 0) {
+        const unsigned int tint = (slot == 0) ? 0xFF78BCFFu : 0x62E07AFFu;
+        const Vector2 visualTip = hasAnchor_ ? end_ : Add(origin_, Mul(direction_, PortalConfig::kAttackReach * amount_));
+        const Vector2i p0 = PortalDraw::ToScreen(origin_);
+        const Vector2i p1 = PortalDraw::ToScreen(visualTip);
+        const float dx = static_cast<float>(p1.x - p0.x);
+        const float dy = static_cast<float>(p1.y - p0.y);
+        const float len = std::sqrt(dx * dx + dy * dy);
+        if (len > 2.0f) {
+            const float nx = -dy / len;
+            const float ny = dx / len;
+            const int segments = static_cast<int>(len / 18.0f) + 1;
+            const float width = static_cast<float>(PortalDraw::Scale(12.0f));
+            for (int i = 0; i < segments; ++i) {
+                const float a = i / static_cast<float>(segments);
+                const float b = (i + 1) / static_cast<float>(segments);
+                const float wobbleA = std::sin(a * 6.28318f + motionTime_ * 0.11f) * std::sin(a * 3.14159f) * 9.0f;
+                const float wobbleB = std::sin(b * 6.28318f + motionTime_ * 0.11f) * std::sin(b * 3.14159f) * 9.0f;
+                const float ax = p0.x + dx * a + nx * wobbleA, ay = p0.y + dy * a + ny * wobbleA;
+                const float bx = p0.x + dx * b + nx * wobbleB, by = p0.y + dy * b + ny * wobbleB;
+                Novice::DrawQuad(
+                    static_cast<int>(ax - nx * width), static_cast<int>(ay - ny * width),
+                    static_cast<int>(ax + nx * width), static_cast<int>(ay + ny * width),
+                    static_cast<int>(bx - nx * width), static_cast<int>(by - ny * width),
+                    static_cast<int>(bx + nx * width), static_cast<int>(by + ny * width),
+                    0, (i * 12) % 64, 32, 12, tentacleTexture, tint);
+            }
+        }
+        const Vector2i g = PortalDraw::ToScreen(origin_);
+        const float gateOpen = Clamp(amount_ * 3.0f, 0.15f, 1.0f);
+        const float gateWidth = static_cast<float>(PortalDraw::Scale(14.0f)) * gateOpen;
+        const float gateHeight = static_cast<float>(PortalDraw::Scale(45.0f)) * gateOpen;
+        const Vector2 dir = Unit(direction_);
+        const Vector2 n = { -dir.y, dir.x };
+        const float ax = dir.x * gateWidth, ay = -dir.y * gateWidth;
+        const float bx = n.x * gateHeight, by = -n.y * gateHeight;
+        Novice::DrawQuad(
+            static_cast<int>(g.x - ax - bx), static_cast<int>(g.y - ay - by),
+            static_cast<int>(g.x + ax - bx), static_cast<int>(g.y + ay - by),
+            static_cast<int>(g.x - ax + bx), static_cast<int>(g.y - ay + by),
+            static_cast<int>(g.x + ax + bx), static_cast<int>(g.y + ay + by),
+            0, 0, 64, 192, gateTexture, tint);
+        return;
+    }
     if (!IsActive()) return;
 
     const float phase = motionTime_ * 0.17f + phaseOffset_;
