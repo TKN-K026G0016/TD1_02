@@ -37,7 +37,7 @@ struct BossBattleSettings {
     float pressSpeed = 42.0f, pressAccel = 2.2f;
     int pressWarning = 42, pressStun = 47;
     float topInitialSpeed = 25.0f;
-    int topDuration = 120; // 旧設定との互換性用。実際の終了判定は帰還到着を優先。
+    int topDuration = 120; // 旧設定との互換性用。実際は反射後に反対側の壁に着くと終了。
     float topGravity = 1.45f;        // 落下中の重力（+Y上向き）
     float topBounceHeight = 5.0f;    // 床で回転する時の上下幅
     float topReturnAccel = 0.055f;  // 反射後の速度変化率

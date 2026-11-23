@@ -1,4 +1,5 @@
 #include <Novice.h>
+#include <cstring>
 #include "input.h"
 #include "texture.h"
 #include "se.h"
@@ -6,6 +7,7 @@
 #include "tool.h"
 #include "common.h"
 #include "scene_manager.h"
+
 
 const char kWindowTitle[] = "TD1_1202_タイトル";
 
@@ -66,6 +68,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		// フレームの終了
 		Novice::EndFrame();
+
 
 		//// ESCキーが押されたらループを抜ける
 		//if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0) 

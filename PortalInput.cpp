@@ -35,7 +35,17 @@ PortalCommands PortalInput::Read() {
     Vector2 keyboardAim = { out.move,static_cast<float>((keys[DIK_W] != 0) - (keys[DIK_S] != 0)) };
     out.aim = Length(arrows) > 0.05f ? EightDirections(arrows) : keyboardAim;
     out.aimExplicit = Length(arrows) > 0.05f || keys[DIK_W] != 0 || keys[DIK_S] != 0;
-    bool attack = (keys[DIK_J] != 0); // キーボードのJは従来どおり残す。
+    // 移植元の2本触手操作。F2で「交互 / 非交互」を切替。
+    const bool leftTentacle = keys[DIK_Q] || keys[DIK_J] ||
+        Novice::IsPressButton(0, kPadButton8) || Novice::IsPressButton(0, kPadButton14);
+    const bool rightTentacle = keys[DIK_E] || keys[DIK_K] ||
+        Novice::IsPressButton(0, kPadButton9) || Novice::IsPressButton(0, kPadButton15);
+    const bool modeKey = keys[DIK_F2] != 0;
+    if (modeKey && !previousModeKey_) grappleMode_ = 1 - grappleMode_;
+    previousModeKey_ = modeKey;
+    out.grappleMode = grappleMode_;
+    out.releaseTentacle = keys[DIK_LSHIFT] || keys[DIK_RSHIFT];
+    bool attack = leftTentacle || rightTentacle;
     bool jump = (keys[DIK_SPACE] != 0);
     bool reset = (keys[DIK_R] != 0);
     out.connected = Novice::GetNumberOfJoysticks() > 0;
@@ -95,13 +105,24 @@ PortalCommands PortalInput::Read() {
     }
     if (!out.stickAction && Length(out.aim) > 0.05f) out.aim = EightDirections(out.aim);
     // プレイヤーへ渡す1Fの攻撃パルス。右スティックではボタン不要。
-    out.attack = (attack && !previousAttack_) || rightPulse;
-    out.mashTap = (attack && !previousAttack_) || rightMashTap;
+    const bool leftPulse = leftTentacle && !previousLeftTentacle_;
+    const bool rightTentPulse = rightTentacle && !previousRightTentacle_;
+    if (rightTentPulse) out.tentacleSlot = 1;
+    else if (leftPulse) out.tentacleSlot = 0;
+    else if (rightPulse) {
+        out.tentacleSlot = nextAutoTentacle_;
+        nextAutoTentacle_ = 1 - nextAutoTentacle_;
+    }
+    else out.tentacleSlot = rightTentacle ? 1 : 0;
+    out.attack = leftPulse || rightTentPulse || rightPulse;
+    out.mashTap = leftPulse || rightTentPulse || rightMashTap;
     out.attackHeld = attack || rightActive;
     out.jump = jump && !previousJump_;
     out.jumpHeld = jump;
     out.reset = reset && !previousReset_;
     previousAttack_ = attack;
+    previousLeftTentacle_ = leftTentacle;
+    previousRightTentacle_ = rightTentacle;
     previousRightHeld_ = rightActive;
     previousJump_ = jump;
     previousReset_ = reset;

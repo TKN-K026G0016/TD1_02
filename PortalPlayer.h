@@ -26,12 +26,15 @@ public:
     void ApplyWakeBlast(Vector2 bossPosition, float pushX, float downSpeed); // -1:なし、0..2:剥がしたい外装番号（Stageへ一度だけ通知）
     void Draw() const;
     const Vector2& GetPosition() const { return position_; }
+    void SyncSamplePose(Vector2 pos, Vector2 vel, bool gripping, bool pulling);
+    void QueueSampleArmorPeel(int armorIndex) { if (armorIndex >= 0)armorPeelRequest_ = armorIndex; }
     Vector2 GetVelocity() const { return velocity_; }
     int GetSelectedAnchor() const { return selectedAnchor_; }
     bool IsGripping() const;
+    int GetGrappleMode() const { return grappleMode_; }
     bool IsSpinning() const { return spinFrames_ > 0; }
     bool IsAutoLaunching() const { return launchVisualFrames_ > 0; }
-    bool HasWireMomentum() const { return launchMomentumFrames_ > 0; } // ワイヤー射出後の回避中も有効
+    bool HasWireMomentum() const { return sampleGripping_ || launchMomentumFrames_ > 0; } // ワイヤー射出後の回避中も有効
     bool IsGrounded() const { return grounded_; }
 
     // 【ボス連携】触手・スピンとボス円の接触判定。1フレームで最強の攻撃を返す。
@@ -56,7 +59,13 @@ public:
     bool IsDefeated() const { return hp_ <= 0; }
 
 private:
+    bool sampleGripping_ = false;
+    bool samplePulling_ = false;
     int maxHp_ = kMaxHp;
+    int grappleMode_ = 0;
+    int requestedTentacleSlot_ = 0;
+    int payoutFrames_ = 0;
+    int activeTentacleSlot_ = -1;
     void ReleaseAll();
     int FindAnchor(Vector2 direction, const Vector2* anchors,
         int count, int fixedCount, int breakableCount) const;

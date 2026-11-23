@@ -9,6 +9,16 @@
 #include <Novice.h>
 
 namespace {
+    constexpr float kTopRadius = 128.0f;
+    // PortalArena::DrawWorld で描く床の左右端。
+    constexpr float kTopFloorLeft = 5.0f;
+    constexpr float kTopFloorRight = 1275.0f;
+    constexpr float kTopVisibleHalfWidth = 78.0f; // gyro.png の不透明部分は X=50〜205
+
+    float TopWidthFactor(int frame) {
+        return 0.91f + 0.09f * std::cos(frame * 0.28f);
+    }
+
     float Clamp(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
     float Abs(float v) { return v < 0.0f ? -v : v; }
     float Dist2(Vector2 a, Vector2 b) {
@@ -79,6 +89,23 @@ namespace {
         Novice::DrawSprite(screen.x - size / 2, screen.y - size / 2,
             handle, scale, scale, -angle, 0xFFFFFFFF);
     }
+    void DrawSpinningTop(Vector2 center, int frame) {
+        constexpr int kSize = 256;
+        static const int handle = Novice::LoadTexture("./resources/texture/boss/form1/gyro.png");
+        // 先端を下に向けたまま、横幅の変化で軸回転を表現する。
+        const float widthFactor = TopWidthFactor(frame);
+        if (handle < 0) {
+            PortalDraw::Box(center, kSize * widthFactor * 0.5f, kSize * 0.5f, 0xC9C4DAFF);
+            return;
+        }
+        const float scale = GetCameraZoom();
+        const float scaleX = scale * widthFactor;
+        const Vector2i screen = PortalDraw::ToScreen(center);
+        const int width = static_cast<int>(kSize * scaleX);
+        const int height = static_cast<int>(kSize * scale);
+        Novice::DrawSprite(screen.x - width / 2, screen.y - height / 2,
+            handle, scaleX, scale, 0.0f, 0xFFFFFFFF);
+    }
 }
 
 // オブジェクトを使い始めるときに値を初期状態へ戻す。リトライ時にも重要。
@@ -87,7 +114,7 @@ void Boss::Initialize(Vector2 spawnPos) {
     flightVelocity_ = {}; flightTimer_ = 0; flightDirection_ = 1;
     targetPosition_ = nullptr; // Stage::InitStageがあとからSetTargetで接続する
     hp_ = GetMaxHp();
-    armorRebuilt_ = false; rebuildOnWake_ = false; mashCount_ = 0; armorFallVelocity_ = 0.0f;
+    coasterStage_ = false; armorRebuilt_ = rebuildOnWake_ = false; mashCount_ = 0; armorFallVelocity_ = 0.0f;
     armorPlates_ = BossStage1::kArmorPlates - 1;
     for (int i = 0; i < kAccessoryGripCount - 1; ++i) {
         accessoryAttached_[i] = true;
@@ -112,7 +139,7 @@ void Boss::Initialize(Vector2 spawnPos) {
     rushTargetX_ = spawnPos.x;
     toyAimY_ = BossStage1::kFloorY + 90.0f;
     toyPosition_ = toyVelocity_ = {};
-    toyReturning_ = toyLanded_ = toyHasHitPlayer_ = false;
+    toyHasHitPlayer_ = false;
     nextBulletIndex_ = 0;
     for (auto& b : bullets_) b = {};
     visual_.Initialize(spawnPos, BossStage1::kFloorY);
@@ -217,6 +244,11 @@ void Boss::SetTargetMotion(Vector2 velocity, bool grounded, bool usingWire) {
 }
 // 距離、移動、空中、ワイヤー使用などから次の5技を評価して選択する。
 void Boss::ChooseAttack() {
+    if (coasterStage_) {
+        nextAttack_ = BossAttack::Rush;
+        ++attackCount_;
+        return;
+    }
     // 【重要】攻撃種類は従来の5種類のまま。
     // 毎回固定の並びにせず、プレイヤーの位置・動き・ワイヤー使用を採点する。
     // 直前と2回前の攻撃にはペナルティを付けて単調な繰り返しを防ぐ。
@@ -334,7 +366,6 @@ void Boss::ChangeState(BossState next) {
     case BossState::ArmorCurl:
         // ネジ全解除で専用イベントへ移る。飛んでいた弾が連打を邪魔しないよう消す。
         for (auto& b : bullets_)b.active = false;
-        toyReturning_ = true;
         visual_.SetMode(BossVfxMode::Recovery);
         ShakeCamera(6.0f, 8);
         break;
@@ -380,19 +411,19 @@ void Boss::ChangeState(BossState next) {
         toyDirection_ = (targetPosition_ && targetPosition_->x > position_.x) ? 1 : -1;
         if (nextAttack_ == BossAttack::Top) {
             // 壁に近い場合は、広い方へ投げて十分な走行距離を確保する。
-            const float left = BossStage1::kArenaLeft + 128.0f;
-            const float right = BossStage1::kArenaRight - 128.0f;
-            if ((toyDirection_ < 0 && position_.x - left < 300.0f) ||
-                (toyDirection_ > 0 && right - position_.x < 300.0f))
+            if ((toyDirection_ < 0 && position_.x - (kTopFloorLeft + kTopVisibleHalfWidth) < 300.0f) ||
+                (toyDirection_ > 0 && (kTopFloorRight - kTopVisibleHalfWidth) - position_.x < 300.0f))
                 toyDirection_ = -toyDirection_;
         }
         toyPosition_ = { position_.x + toyDirection_ * 47.0f,position_.y - 20.0f };
         toyVelocity_ = { toyDirection_ * (nextAttack_ == BossAttack::Top ? battleSettings_.topInitialSpeed : 14.5f),3.0f };
-        toyOriginX_ = toyPosition_.x;
-        toyReturning_ = toyLanded_ = toyHasHitPlayer_ = false;
-        topPhase_ = TopPhase::Drop;
+        toyHasHitPlayer_ = false;
+        topLanded_ = false;
+        topWallHits_ = 0;
         topElapsed_ = 0;
-        topLaunchX_ = toyPosition_.x;
+        if (nextAttack_ == BossAttack::Top)
+            toyPosition_.x = Clamp(toyPosition_.x, kTopFloorLeft + kTopVisibleHalfWidth,
+                kTopFloorRight - kTopVisibleHalfWidth);
         ShakeCamera(2.5f, 4); // 手から放り投げる反動
         break;
     case BossState::Defeated:
@@ -404,9 +435,6 @@ void Boss::ChangeState(BossState next) {
     }
 }
 
-// 【第2段階】HP50%以下になったタイミングで一度だけ外装とネジを復元。
-// 続けて衝撃を発生させるのは ChangeState(WakeBlast) の既存経路。
-// HP50%以下で1度だけ外装・ネジを復活させる。
 void Boss::BeginArmorRebuild() {
     armorRebuilt_ = true;
     rebuildOnWake_ = false;
@@ -422,6 +450,13 @@ void Boss::BeginArmorRebuild() {
     hitCooldown_ = 0;
 }
 
+void Boss::StartCoasterStage() {
+    coasterStage_ = true;
+    armorPlates_ = 0;
+    for (int i = 1; i < BossStage1::kArmorPlates; ++i) armorAttached_[i] = false;
+    for (int i = 0; i < kAccessoryGripCount - 1; ++i) accessoryAttached_[i] = false;
+}
+
 // 【連打専用】左で移動・右スティックをニュートラル→倒す、を1HITとして受付。
 // 接近判定をなくしているのは、カメラ演出中の攻撃が届かない事故を防ぐため。
 // スタン中のスティック弾き直し等を1回の連打として数え、コアHPを減らす。
@@ -434,7 +469,7 @@ bool Boss::RegisterMashHit() {
     ShakeCamera(2.0f + static_cast<float>(mashCount_ > 12 ? 12 : mashCount_) * 0.16f,
         BossStage1::kMashHitShakeFrames);
     if (hp_ <= 0) { hp_ = 0; ChangeState(BossState::Defeated); }
-    else if (hp_ * 100 <= GetMaxHp() * battleSettings_.phase2HpPercent && !armorRebuilt_) {
+    else if (!coasterStage_ && IsEnraged() && !armorRebuilt_) {
         rebuildOnWake_ = true;
         ChangeState(BossState::WakeBlast);
     }
@@ -466,6 +501,8 @@ bool Boss::IsWeakPointOpen() const {
 }
 // 突進中にワイヤーが使われたか記録し、空振り後の失速判断に使う。
 void Boss::NoteWireMotion(bool usingWire) {
+    if (coasterStage_ && (state_ != BossState::Rush || !targetPosition_ ||
+        targetPosition_->y <= rushTargetY_ + kHitRadius + 24.0f)) return;
     // 【安全な判定】予兆または突進中にワイヤーが接続/自動射出されたか記録。
     // 動かずに普通に避けた場合は専用の長い失速は発生しない。
     if (usingWire && ((state_ == BossState::Warning && nextAttack_ == BossAttack::Rush) ||
@@ -476,6 +513,7 @@ void Boss::NoteWireMotion(bool usingWire) {
 // 攻撃種と現在の外装・スタン状態を考慮してHPや演出を更新する。
 bool Boss::TakeDamage(int amount, bool isGrappleHit, bool isSpinHit, bool fromWireLaunch) {
     if (IsDefeated() || state_ == BossState::ArmorCurl || amount <= 0 || hitCooldown_ > 0) return false;
+    if (coasterStage_ && state_ != BossState::Dizzy) return false;
     hitCooldown_ = BossStage1::kNormalHitCooldown;
     // 【通常攻撃】短い間隔で当てると連続ヒット。粒子を増やさずダメージで爽快感。
     if (!isGrappleHit && !isSpinHit) {
@@ -513,13 +551,13 @@ bool Boss::TakeDamage(int amount, bool isGrappleHit, bool isSpinHit, bool fromWi
     if (IsWeakPointOpen()) amount = static_cast<int>(amount * BossStage1::kCoreBonusDamage);
     hp_ -= amount;
     visual_.OnMuzzleFlash(position_);
-    if (hp_ <= 0) { hp_ = 0;ChangeState(BossState::Defeated); }
-    else if (hp_ * 100 <= GetMaxHp() * battleSettings_.phase2HpPercent && !armorRebuilt_) {
-        // 通常攻撃でHP半分を跨いだときも第2段階へ（連打以外のルートを塞がない）。
+    if (hp_ <= 0) { hp_ = 0; ChangeState(BossState::Defeated); }
+    else if (!coasterStage_ && IsEnraged() && !armorRebuilt_) {
         rebuildOnWake_ = true;
         ChangeState(BossState::WakeBlast);
+        return true;
     }
-    else if (amount >= 14) { hitstop_ = 2;ShakeCamera(2.0f, 4); }
+    else if (amount >= 14) { hitstop_ = 2; ShakeCamera(2.0f, 4); }
     applyCounter();
     return true;
 }
@@ -608,59 +646,51 @@ void Boss::TriggerAttackForEditor(BossAttack attack) {
 
 void Boss::UpdateToy() {
     if (nextAttack_ == BossAttack::Top) {
-        // 【コマ】1: 落下 2: 床を進む 3: 壁に反射 4: 発射地点へ帰還。
-        // 制限フレームだけで途中消滅しない。帰還した瞬間にのみ攻撃終了する。
+        // 落下と壁の反射を別々に管理し、空中で壁に当たっても落下を続ける。
         ++topElapsed_;
-        const float radius = 128.0f; // 256x256画像の外接範囲
-        const float left = BossStage1::kArenaLeft + radius;
-        const float right = BossStage1::kArenaRight - radius;
-        const float floorCenter = BossStage1::kFloorY + radius;
-        const float speed = battleSettings_.topInitialSpeed;
-        if (topPhase_ == TopPhase::Drop) {
-            // 床へ降りながら水平方向にも進む。着地後は床面の高さに固定する。
+        const float floorCenter = BossStage1::kFloorY + kTopRadius;
+        if (!topLanded_) {
             toyVelocity_.y = Clamp(toyVelocity_.y - battleSettings_.topGravity, -26.0f, 12.0f);
             toyPosition_.y += toyVelocity_.y;
             if (toyPosition_.y <= floorCenter) {
                 toyPosition_.y = floorCenter;
                 toyVelocity_.y = 0.0f;
-                topPhase_ = TopPhase::Roll;
-                toyLanded_ = true;
+                topLanded_ = true;
                 ShakeCamera(3.0f, 5);
             }
         }
         else {
-            // 軸がわずかに上下する。回転角はDraw側のstateFrame_を使用。
             toyPosition_.y = floorCenter + battleSettings_.topBounceHeight *
                 Abs(std::sin(stateFrame_ * 0.14f));
         }
+
+        // 最初の壁を起点に、壁間を4回横切ると2往復になる。
+        constexpr int kWallHitsToExit = 5;
+        const float speed = battleSettings_.topInitialSpeed;
+        if (topWallHits_ > 0) {
+            const float wanted = std::copysign(speed, toyVelocity_.x);
+            toyVelocity_.x += (wanted - toyVelocity_.x) * battleSettings_.topReturnAccel;
+        }
         toyPosition_.x += toyVelocity_.x;
-        if (topPhase_ != TopPhase::Return) {
-            // 必ず最初の壁に触れるまで進み、そこで一度だけ折り返す。
+        if (topWallHits_ < kWallHitsToExit && topElapsed_ < battleSettings_.topMaxLifetime) {
+            const float halfWidth = kTopVisibleHalfWidth * TopWidthFactor(stateFrame_);
+            const float left = kTopFloorLeft + halfWidth;
+            const float right = kTopFloorRight - halfWidth;
             const bool wallHit = (toyVelocity_.x < 0.0f && toyPosition_.x <= left) ||
                 (toyVelocity_.x > 0.0f && toyPosition_.x >= right);
-            if (wallHit) {
+            if (wallHit && ++topWallHits_ < kWallHitsToExit) {
                 toyPosition_.x = Clamp(toyPosition_.x, left, right);
-                toyVelocity_.x = -toyDirection_ * (speed * 0.65f);
-                topPhase_ = TopPhase::Return;
-                toyReturning_ = true;
+                toyVelocity_.x = -std::copysign(speed * 0.65f, toyVelocity_.x);
                 ShakeCamera(3.0f, 5);
             }
         }
         else {
-            // 反射直後は遅く、徐々に巡航速度へ近付く。
-            const float wanted = -toyDirection_ * speed;
-            toyVelocity_.x += (wanted - toyVelocity_.x) * battleSettings_.topReturnAccel;
-            const bool arrived = toyDirection_ > 0 ? toyPosition_.x <= topLaunchX_ : toyPosition_.x >= topLaunchX_;
-            if (arrived) {
-                toyPosition_.x = topLaunchX_; // 帰還完了後に消すのでワープとして見えない
+            // カメラの揺れ・ズームを含め、画像が画面の外に出切ってから終了する。
+            constexpr int kStageViewportWidth = 1280;
+            const int screenX = PortalDraw::ToScreen(toyPosition_).x;
+            const int halfWidth = PortalDraw::Scale(2.0f * kTopRadius) / 2;
+            if (screenX + halfWidth < 0 || screenX - halfWidth >= kStageViewportWidth)
                 ChangeState(BossState::Idle);
-                return;
-            }
-        }
-        // 予期せず地形範囲を逸脱した場合でも無限ループにならない安全策。
-        // 通常プレイでは左右移動→1回反射→帰還で必ず終了する。
-        if (topElapsed_ >= battleSettings_.topMaxLifetime) {
-            ChangeState(BossState::Idle);
         }
         return;
     }
@@ -706,6 +736,16 @@ int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitS
             return BossStage1::kToyDamage;
         }
         if (Dist2(playerPosition, toyPosition_) > r * r * 4.0f) toyHasHitPlayer_ = false;
+    }
+    if (coasterStage_ && state_ == BossState::Rush) {
+        const float dx = Abs(playerPosition.x - position_.x);
+        if (dx <= BossStage1::kBossWidth * 0.5f + playerRadius &&
+            playerPosition.y <= rushTargetY_ + kHitRadius + playerRadius) {
+            rushHitPlayer_ = true;
+            if (hitSource) *hitSource = position_;
+            return 18;
+        }
+        return 0;
     }
     const bool dangerous = state_ == BossState::Rush ||
         (state_ == BossState::Press &&
@@ -789,7 +829,7 @@ void Boss::Update() {
         // 【直した原因③】射撃で横へノックバックした後、そのまま位置がズレ続けていた。
         // 毎回同じ位置へ戻さず、新しい巡回地点へ向かう。
         UpdateFlight();
-        if (stateFrame_ >= (IsEnraged() ? 24 : battleSettings_.idleFrames)) {
+        if (stateFrame_ >= ((coasterStage_ || IsEnraged()) ? 24 : battleSettings_.idleFrames)) {
             ChooseAttack();
             ChangeState(BossState::Warning);
         }
@@ -803,8 +843,8 @@ void Boss::Update() {
         case BossAttack::Shot: durationFrames = battleSettings_.shotWarning;break;
         case BossAttack::Top:case BossAttack::YoYo:durationFrames = battleSettings_.toyWarning;break;
         }
-        const float duration = static_cast<float>(IsEnraged() ?
-            (durationFrames * 3 / 4) : durationFrames);
+        const float duration = static_cast<float>(coasterStage_ && nextAttack_ == BossAttack::Rush ? 60 :
+            (IsEnraged() ? durationFrames * 3 / 4 : durationFrames));
         // プレスは予兆前半だけ追尾し、後半は予測位置が固定される。
         if (nextAttack_ == BossAttack::Press && stateFrame_ < 12 && targetPosition_)
             pressTargetX_ = targetPosition_->x;
@@ -853,7 +893,7 @@ void Boss::Update() {
         // ステージの端から反対側の端まで、プレイヤーの現在位置に左右されず突進する。
         position_.y = rushTargetY_;
         const float maxSpeed = (battleSettings_.rushSpeed > 1.0f ? battleSettings_.rushSpeed : 1.0f) *
-            (IsEnraged() ? 1.25f : 1.0f);
+            ((coasterStage_ || IsEnraged()) ? 1.25f : 1.0f);
         const float accel = battleSettings_.rushAccel > 0.1f ? battleSettings_.rushAccel : 0.1f;
         rushVelocity_ = Clamp(rushVelocity_ + accel, 0.0f, maxSpeed);
         position_.x += rushDirection_ * rushVelocity_;
@@ -901,8 +941,8 @@ void Boss::Update() {
     case BossState::ArmorStun:
         // 【叩き放題】長い反撃時間。HPが0になれば吹き飛ばしを出さず撃破。
         if (stateFrame_ >= BossStage1::kMashTimeFrames) {
-            // 時間切れでもプレイヤーを吹き飛ばす。HP半分は一度しか復活しない。
-            rebuildOnWake_ = !armorRebuilt_ && hp_ * 100 <= GetMaxHp() * battleSettings_.phase2HpPercent;
+            // 時間切れでもプレイヤーを吹き飛ばす。
+            rebuildOnWake_ = !coasterStage_ && !armorRebuilt_ && IsEnraged();
             ChangeState(BossState::WakeBlast);
         }
         break;
@@ -917,7 +957,7 @@ void Boss::Update() {
     case BossState::Dizzy:
         // 【反撃猶予】ワイヤーで突進をかわした直後の隙。
         // コア露出済なら与ダメUP。まだ外装があれば通常攻撃でも剥がしやすい。
-        if (stateFrame_ >= battleSettings_.rushDizzy)
+        if (stateFrame_ >= (coasterStage_ ? 120 : battleSettings_.rushDizzy))
             ChangeState(BossState::Recovery); // 隙の後で現在位置から飛行再開
         break;
     case BossState::Press: UpdatePress(); break;
@@ -957,6 +997,11 @@ void Boss::Draw() const {
         case BossAttack::Rush:
             PortalDraw::Box({ (BossStage1::kArenaLeft + BossStage1::kArenaRight) * 0.5f, rushTargetY_ },
                 BossStage1::kArenaRight - BossStage1::kArenaLeft, 7.0f, color);
+            if (coasterStage_) {
+                const float ceiling = rushTargetY_ + kHitRadius;
+                PortalDraw::Box({ 640.0f, (ceiling + BossStage1::kFloorY) * 0.5f },
+                    1270.0f, ceiling - BossStage1::kFloorY, 0xFF644334);
+            }
             break;
         case BossAttack::Press:
             // どこへ落ちてくるか床に予測エリア。移動して回避できる。
@@ -1076,11 +1121,9 @@ void Boss::Draw() const {
         PortalDraw::Box(position_, 300.0f + stateFrame_ * 17.0f, 8.0f, 0xFFE9BCCC);
     }
     if (state_ == BossState::Toy) {
-        static int topHandle = -2;
         static int yoyoHandle = -2;
         if (nextAttack_ == BossAttack::Top) {
-            DrawToySprite("./resources/texture/boss/form1/gyro.png",
-                toyPosition_, 256, stateFrame_ * 0.24f, topHandle);
+            DrawSpinningTop(toyPosition_, stateFrame_);
         }
         else {
             PortalDraw::Line(position_, toyPosition_, 0xF0D3FFFF);

@@ -1,6 +1,9 @@
 #pragma once
 #include "Vector2.h"
 struct PortalCommands {
+    int tentacleSlot = 0; // 0=左(Q/J/L2) 1=右(E/K/R2)
+    int grappleMode = 0; // 0=通常(非交互), 1=交互(杭を越えて往復)
+    bool releaseTentacle = false;
     float move = 0;
     Vector2 aim = {};
     bool aimExplicit = false; // 矢印キー/W・S/右スティックで意識して照準したか。A/D移動だけならfalse
@@ -23,4 +26,9 @@ private:
     int rightHoldFrames_ = 0;
     bool previousJump_ = false;
     bool previousReset_ = false;
+    bool previousLeftTentacle_ = false;
+    bool previousRightTentacle_ = false;
+    bool previousModeKey_ = false;
+    int grappleMode_ = 0;
+    int nextAutoTentacle_ = 0;
 };

@@ -107,7 +107,7 @@ namespace PortalConfig {
 	constexpr int kAttackBufferFrames = 7;
 	constexpr int kTentacleExtendFrames = 4; // 触手の接続応答速度（フレーム）
 	constexpr int kTentacleRetractFrames = 9;
-	constexpr int kGateCount = 4;
+	constexpr int kGateCount = 2; // 移植サンプルに合わせて触手を左右2本に固定
 	// 【外装剥がし】取っ掛かりをJで狙ってから、触手で引き剥がすまでのフレーム。
 	// 【装甲を剥がす駆け引き】フックを狙ってJを押し、そのまま長押しで張力をためる。
 	// Jを離した時、許容範囲のフレームなら外装が剥がれる。早過ぎ/遅過ぎは失敗。
