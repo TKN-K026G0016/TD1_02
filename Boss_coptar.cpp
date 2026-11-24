@@ -245,7 +245,9 @@ void Boss::SetTargetMotion(Vector2 velocity, bool grounded, bool usingWire) {
 // 距離、移動、空中、ワイヤー使用などから次の5技を評価して選択する。
 void Boss::ChooseAttack() {
     if (coasterStage_) {
-        nextAttack_ = BossAttack::Rush;
+        // Stage 2: horizontal charge, then vertical charge.
+        // Stage 1's attack selection is not modified.
+        nextAttack_ = (attackCount_ % 2 == 0) ? BossAttack::Rush : BossAttack::Press;
         ++attackCount_;
         return;
     }
@@ -562,6 +564,45 @@ bool Boss::TakeDamage(int amount, bool isGrappleHit, bool isSpinHit, bool fromWi
     return true;
 }
 void Boss::UpdatePress() {
+    // Stage 2 vertical charge: prepare high above the target, then descend
+    // rapidly in a straight line. Stage 1 retains its original press motion.
+    if (coasterStage_) {
+        ++pressFrame_;
+        switch (pressPhase_) {
+        case PressPhase::Align:
+            position_.x = Approach(position_.x, pressTargetX_, 15.0f);
+            position_.y = Approach(position_.y, 600.0f, 13.0f);
+            if (Abs(position_.x - pressTargetX_) < 1.0f &&
+                Abs(position_.y - 600.0f) < 1.0f)
+                ChangePressPhase(PressPhase::Charge);
+            break;
+        case PressPhase::Charge:
+            // A visible pause makes the vertical lane readable.
+            if (pressFrame_ >= 32) ChangePressPhase(PressPhase::Dive);
+            break;
+        case PressPhase::Dive:
+            pressFallSpeed_ = Clamp(pressFallSpeed_ + 1.9f, 0.0f, 31.0f);
+            position_.y -= pressFallSpeed_;
+            if (position_.y <= BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f) {
+                position_.y = BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f;
+                ChangePressPhase(PressPhase::Impact);
+                ShakeCamera(9.0f, 13);
+                visual_.OnImpact({ position_.x, BossStage1::kFloorY + 5.0f });
+            }
+            break;
+        case PressPhase::Impact:
+            if (pressFrame_ >= 8) ChangePressPhase(PressPhase::Stun);
+            break;
+        case PressPhase::Stun:
+            if (pressFrame_ >= 38) ChangePressPhase(PressPhase::Return);
+            break;
+        case PressPhase::Return:
+            position_.y = Approach(position_.y, 370.0f, 9.0f);
+            if (Abs(position_.y - 370.0f) < 1.0f) ChangeState(BossState::Idle);
+            break;
+        }
+        return;
+    }
     ++pressFrame_;
     switch (pressPhase_) {
     case PressPhase::Align:
@@ -761,6 +802,26 @@ int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitS
 // 予兆前の短い待機中も、コプターが同じ一点に固定されないよう移動する。
 // 目的地はプレイヤーから距離を取りつつ画面内に収め、速度をなめらかに変える。
 void Boss::UpdateFlight() {
+    if (coasterStage_) {
+        // Fighter-like patrol: long lateral passes with gradual banking,
+        // rather than small random hovering movements. No teleporting.
+        if (--flightTimer_ <= 0 ||
+            Abs(flightDestination_.x - position_.x) < 35.0f) {
+            const bool toRight = position_.x < 640.0f;
+            flightDestination_ = { toRight ? 1070.0f : 210.0f,
+                390.0f + static_cast<float>((attackCount_ % 3) - 1) * 65.0f };
+            flightTimer_ = 110;
+        }
+        const float dx = flightDestination_.x - position_.x;
+        const float dy = flightDestination_.y - position_.y;
+        const float desiredX = Clamp(dx * 0.085f, -12.0f, 12.0f);
+        const float desiredY = Clamp(dy * 0.052f, -4.0f, 4.0f);
+        flightVelocity_.x += (desiredX - flightVelocity_.x) * 0.065f;
+        flightVelocity_.y += (desiredY - flightVelocity_.y) * 0.055f;
+        position_.x = Clamp(position_.x + flightVelocity_.x, 150.0f, 1130.0f);
+        position_.y = Clamp(position_.y + flightVelocity_.y, 210.0f, 590.0f);
+        return;
+    }
     if (--flightTimer_ <= 0) {
         const int interval = IsEnraged() ? battleSettings_.flightIntervalPhase2 : battleSettings_.flightInterval;
         flightTimer_ = interval > 0 ? interval : 1;
@@ -893,7 +954,7 @@ void Boss::Update() {
         // ステージの端から反対側の端まで、プレイヤーの現在位置に左右されず突進する。
         position_.y = rushTargetY_;
         const float maxSpeed = (battleSettings_.rushSpeed > 1.0f ? battleSettings_.rushSpeed : 1.0f) *
-            ((coasterStage_ || IsEnraged()) ? 1.25f : 1.0f);
+            (coasterStage_ ? 1.75f : (IsEnraged() ? 1.25f : 1.0f));
         const float accel = battleSettings_.rushAccel > 0.1f ? battleSettings_.rushAccel : 0.1f;
         rushVelocity_ = Clamp(rushVelocity_ + accel, 0.0f, maxSpeed);
         position_.x += rushDirection_ * rushVelocity_;

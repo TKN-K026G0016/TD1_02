@@ -16,7 +16,7 @@
 using namespace PortalMath;
 namespace {
     constexpr Vector2 kCoasterAnchors[] = { {155, 495}, {480, 525}, {800, 525}, {1125, 495} };
-    constexpr int kCoasterAnchorCount = sizeof(kCoasterAnchors) / sizeof(kCoasterAnchors[0]);
+    constexpr int kCoasterAnchorCount = 2; // Stage 2: fewer moving grip points
 
     void DrawCoaster(int frame) {
         PortalDraw::Box({ 640, 360 }, 1500, 800, 0x19364CFF);
