@@ -10,8 +10,19 @@
 #include "ExactPlayerBattle.h"
 #include "PortalDraw.h"
 #include "PortalMath.h"
+#include "Texture.h"
 #include <Novice.h>
 #include <cmath>
+
+#pragma region データ: 背景
+//Form1
+Texture bgForm1Texture;
+//form2
+Texture bg1Form2Texture;
+Texture bg2Form2Texture;
+Texture bg3Form2Texture;
+
+#pragma endregion
 
 using namespace PortalMath;
 namespace {
@@ -54,6 +65,15 @@ void PortalArena::Initialize() {
     frame_ = 0;stage2_.Reset();connected_ = false;mashPulse_ = false;
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) { armorPointEnabled_[i] = false;armorPoints_[i] = {}; }
     for (int i = 0;i < kExtraBossPoints;++i) { extraPointEnabled_[i] = false;extraPoints_[i] = {}; }
+
+#pragma region テクスチャ読み込み処理
+    bgForm1Texture = GetTexture(TextureType::BackgroundForm1);
+    bg1Form2Texture = GetTexture(TextureType::Background1Form2);
+    bg2Form2Texture = GetTexture(TextureType::Background2Form2);
+    bg3Form2Texture = GetTexture(TextureType::Background3Form2);
+
+#pragma endregion
+
 }
 // ------------------------------------------------------------------------
 // 【関数】PortalArena::SetBattleSettings()
@@ -135,12 +155,28 @@ void PortalArena::DrawWorld() const {
             PortalDraw::Box({ 640.0f,44.0f }, 180.0f, 52.0f, 0x19364CFF);
             PortalDraw::Box({ 535.0f,44.0f }, 14.0f, 60.0f, 0xEB687AFF);
             PortalDraw::Box({ 745.0f,44.0f }, 14.0f, 60.0f, 0xEB687AFF);
+
+            DrawTextureAsObj(bg1Form2Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
+            DrawTextureAsObj(bg2Form2Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
+            DrawTextureAsObj(bg3Form2Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
         }
     }
     else {
         PortalDraw::Box({ 640.0f,360.0f }, 1500.0f, 800.0f, 0xAECBD7FF);
         PortalDraw::Box({ 640.0f,26.0f }, 1270.0f, 76.0f, 0x31364EFF);
+
         PortalDraw::Box({ 640.0f,64.0f }, 1270.0f, 5.0f, 0xA2A8C4FF);
+
+#pragma region 背景描画
+        //DrawTextureAsObj(bg1Stage2Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
+        //DrawTextureAsObj(bg2Stage2Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
+        //DrawTextureAsObj(bg3Stage2Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
+
+        DrawTextureAsObj(bgForm1Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
+
+#pragma endregion
+
+
     }
     for (int i = 0;i < anchorCount;++i) {
         const Vector2 a = coasterStage_ ? stage2_.Anchor(i) : anchors[i];
