@@ -1,3 +1,4 @@
+#include "AssetEditor.h"
 // 【このファイルの役割】Boss_coptar.cpp — コプターの行動・外装・戦闘AI
 // 5種類の攻撃、4ネジ解除、墜落、連打スタン、第2段階、被弾、撃破を管理する。
 
@@ -6,6 +7,7 @@
 #include "PortalDraw.h"
 #include "PortalConfig.h"
 #include <cmath>
+#include <cstring>
 #include <Novice.h>
 
 namespace {
@@ -59,6 +61,8 @@ namespace {
     }
     void DrawImagePart(const BossPartArt& art, Vector2 base, float angle, int& handle) {
         if (handle == -2) handle = Novice::LoadTexture(art.path);
+        if (std::strcmp(art.path, "./resources/texture/boss/form1/boss_body.png") == 0)
+            handle = AssetEditor::Handle(AssetEditor::BossBody);
         const Vector2 offset = ImageOffset(art);
         const Vector2 center = { base.x + offset.x, base.y + offset.y };
         if (handle >= 0) {

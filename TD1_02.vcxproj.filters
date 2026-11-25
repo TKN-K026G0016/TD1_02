@@ -326,6 +326,11 @@
     <ClInclude Include="Stage2Gimmicks.h">
       <Filter>Stage</Filter>
     </ClInclude>
+    <ClInclude Include="ArmorTensionSystem.h">
+      <Filter>Player</Filter>
+    </ClInclude>
+    <ClInclude Include="AssetEditor.h" />
+    <ClInclude Include="FinalTuningEditor.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="TD1_02.rc" />

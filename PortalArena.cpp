@@ -1,3 +1,4 @@
+#include "AssetEditor.h"
 // ============================================================================
 // 【このファイルの役割】PortalArena.cpp — ボス戦の床・杭・プレイヤー管理
 // 移動杭と外装ネジの座標をまとめ、プレイヤー更新へ渡す。背景/杭とプレイヤーは別々に描く。
@@ -19,7 +20,8 @@ namespace {
     constexpr int kCoasterAnchorCount = 2; // Stage 2: fewer moving grip points
 
     void DrawCoaster(int frame) {
-        PortalDraw::Box({ 640, 360 }, 1500, 800, 0x19364CFF);
+        if (!AssetEditor::DrawBackground(AssetEditor::Background2))
+            PortalDraw::Box({ 640, 360 }, 1500, 800, 0x19364CFF);
         const int farShift = (frame % 240) * 3;
         for (int i = -1; i < 10; ++i) {
             const float x = static_cast<float>(i * 240 - farShift);
@@ -51,7 +53,7 @@ void PortalArena::Initialize() {
     player_.Initialize({ 420.0f,110.0f });
     ExactPlayerBattle::Reset();
     coasterStage_ = false;
-    frame_ = 0;stage2_.Reset();connected_ = false;mashPulse_ = false;
+    frame_ = 0;stage2_.Reset();armorTension_.Reset();connected_ = false;mashPulse_ = false;
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) { armorPointEnabled_[i] = false;armorPoints_[i] = {}; }
     for (int i = 0;i < kExtraBossPoints;++i) { extraPointEnabled_[i] = false;extraPoints_[i] = {}; }
 }
@@ -109,12 +111,15 @@ bool PortalArena::Update() {
     if (f2Now && !f2Prev) ExactPlayerBattle::SetAlternate(!ExactPlayerBattle::IsAlternate());
     f2Prev = f2Now;
     if (!player_.IsDefeated()) {
+        ExactPlayerBattle::SetBossAnchorStart(anchorCount);
         ExactPlayerBattle::Update(points, anchorCount + BossBattleSettings::kArmorHooks + kExtraBossPoints);
         const auto snap = ExactPlayerBattle::GetSnapshot();
         player_.SyncSamplePose(snap.position, snap.velocity, snap.gripping, snap.pulling);
-        // Sample stake removal is bridged to the boss armor request.
-        if (snap.peeledStake >= anchorCount)
-            player_.QueueSampleArmorPeel(snap.peeledStake - anchorCount);
+        // Loosening is preparation, not damage. Only a real two-arm yank
+        // can produce an armor peel request. GP removal remains sample-owned.
+        const int part = armorTension_.Update(snap, anchorCount,
+            BossBattleSettings::kArmorHooks + kExtraBossPoints);
+        if (part >= 0) player_.QueueSampleArmorPeel(part);
     }
     ++frame_;
     return false;
@@ -138,7 +143,8 @@ void PortalArena::DrawWorld() const {
         }
     }
     else {
-        PortalDraw::Box({ 640.0f,360.0f }, 1500.0f, 800.0f, 0xAECBD7FF);
+        if (!AssetEditor::DrawBackground(AssetEditor::Background1))
+            PortalDraw::Box({ 640.0f,360.0f }, 1500.0f, 800.0f, 0xAECBD7FF);
         PortalDraw::Box({ 640.0f,26.0f }, 1270.0f, 76.0f, 0x31364EFF);
         PortalDraw::Box({ 640.0f,64.0f }, 1270.0f, 5.0f, 0xA2A8C4FF);
     }
@@ -154,6 +160,15 @@ void PortalArena::DrawWorld() const {
             PortalDraw::Box({ a.x,a.y + 27 }, 35, 3, 0xFFFFFFFF);
             PortalDraw::Box({ a.x,a.y - 27 }, 35, 3, 0xFFFFFFFF);
         }
+    }
+    // Remaining screw heads show persistent looseness (amber ring).
+    for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) {
+        if (!armorPointEnabled_[i]) continue;
+        const float loose = armorTension_.Loosen(i);
+        const Vector2 p = armorPoints_[i];
+        PortalDraw::Box({ p.x,p.y + 19.0f }, 32.0f, 4.0f, 0x1F2232FF);
+        PortalDraw::Box({ p.x - 16.0f + 16.0f * loose,p.y + 19.0f },
+            32.0f * loose, 4.0f, 0xFFCB65FF);
     }
     // 【ボス外装の取っ掛かり】照準が合ったネジだけ白い四角で強調する。
     // 通常はボス自身が十字を描くので追加描画は選択中の2BOXだけ。
@@ -223,7 +238,7 @@ void PortalArena::DrawHUD() const {
     Novice::ScreenPrintf(18, 32, "%s", coasterStage_
         ? "HOLD RIGHT ON AN UPPER GRIP POINT TO DODGE -> COUNTER"
         : "GROUND RUSH! JUMP / WIRE OVER IT -> BOSS STUN -> ATTACK!");
-    // 四隅のネジは狙って接続した時点で1つ解除。4個目で外装がめくれる。
+    // Screw loosening prepares a lower-force two-arm peel; it cannot destroy armor alone.
     const char* status = player_.IsPullingArmor() ? "ARMOR SCREW: LOCK -> REMOVE" :
         player_.IsAutoLaunching() ? "WIRE LAUNCH!" :
         player_.IsGripping() ? "WIRE SPIN: LIGHT AUTO ATTACK" :
@@ -232,10 +247,23 @@ void PortalArena::DrawHUD() const {
     const int target = player_.GetSelectedAnchor();
     const int anchorCount = coasterStage_ ? kCoasterAnchorCount : anchorCount_;
     if (target >= anchorCount && target < anchorCount + BossBattleSettings::kArmorHooks)
-        status = "BOSS PART: GRAPPLE TO PEEL / LAUNCH";
+        status = "BOSS SCREW: WIND TO LOOSEN, TWO-ARM YANK TO PEEL";
     else if (target >= anchorCount + BossBattleSettings::kArmorHooks)
         status = "BOSS POINT: GRAPPLE TO MOVE";
     Novice::ScreenPrintf(18, 52, "%s  /  %s", connected_ ? "GAMEPAD" : "KEYBOARD", status);
+    const int screw = armorTension_.DisplayTarget();
+    if (screw >= 0) {
+        const float loose = armorTension_.Loosen(screw);
+        const float required = armorTension_.RequiredTension(screw);
+        Novice::ScreenPrintf(18, 106, "SCREW %d  LOOSEN %d%%  REQUIRED TENSION %.0f",
+            screw, static_cast<int>(loose * 100.0f), required);
+        Novice::DrawBox(18, 126, 220, 10, 0, 0x263348FF, kFillModeSolid);
+        Novice::DrawBox(18, 126, static_cast<int>(220 * loose), 10, 0, 0xFFBD60FF, kFillModeSolid);
+    }
+    Novice::ScreenPrintf(18, 142, "WIND: ONE ARM / PEEL: BOSS SCREW + DISTANT GP WITH BOTH ARMS");
+    if (armorTension_.ResultFrames() > 0)
+        Novice::ScreenPrintf(18, 160, armorTension_.LastSuccess() ?
+            "TENSION OK! ARMOR REMOVED" : "TENSION TOO LOW - LOOSEN FIRST (OR USE DISTANT GP)");
     if (player_.IsPullingArmor()) {
         const float progress = player_.GetArmorPullProgress();
         // 文字とBOX2個だけ。新しいパーティクルや長いロープは描かない。
