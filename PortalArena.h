@@ -2,6 +2,7 @@
 #include "PortalPlayer.h"
 #include "BossBattleSettings.h"
 #include "Stage2Gimmicks.h"
+#include "ArmorTensionSystem.h"
 
 // 第1ステージ：画面固定の回避アリーナ。
 // ワイヤーで「高い出口に登る」のではなく「突進の攻撃ラインから脱出」する。
@@ -16,6 +17,8 @@ public:
     int Stage2HitPlayer(Vector2 player, Vector2* source);
     bool Stage2CounterReady() const { return stage2_.CanCounter() && stage2_.Loosen() >= 100.0f; }
     bool ConsumeStage2Counter() { return stage2_.ConsumeLoosen(); }
+    float GetPartLoosen(int index) const { return armorTension_.Loosen(index); }
+    void NotifyArmorPeeled(int index) { armorTension_.OnPartPeeled(index); }
     bool Update(); // Rでリスタートするとtrue
     void Draw() const; // 従来の描画（他の画面で使用する場合の互換用）
     void DrawWorld() const; // 背景・床・グリップポイントだけ
@@ -51,4 +54,5 @@ private:
     Vector2 extraPoints_[kExtraBossPoints] = {};
     int frame_ = 0;
     Stage2Gimmicks stage2_;
+    ArmorTensionSystem armorTension_;
 };

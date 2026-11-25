@@ -1,0 +1,12 @@
+AssetEditorV2
+0	32	32	8	1	-
+1	32	32	8	1	-
+2	64	64	1	1	./resources/texture/player/video_sample/playerIdle.png
+3	64	64	1	1	./resources/texture/editor_assets/slot_03_000001.png
+4	64	64	1	1	./resources/texture/editor_assets/slot_04_000002.png
+5	64	64	1	1	./resources/texture/editor_assets/slot_05_000003.png
+6	32	64	8	1	./resources/texture/player/video_sample/tentacle.png
+7	64	192	8	1	./resources/texture/player/video_sample/gate.png
+8	256	256	8	1	./resources/texture/boss/form1/boss_body.png
+9	512	256	8	1	./resources/texture/boss/form2/boss_body.png
+10	64	32	8	1	./resources/texture/stage/mapchip.png
