@@ -10,7 +10,7 @@
 
 // 第1ステージの行動AI。本体・プロペラ・ジェット・パイプ・目を分割画像で描画する。
 // StageがBossの実体を所有し、Player座標への読み取り専用ポインタを渡す。
-enum class BossState { Idle, Warning, Rush, Recovery, Dizzy, ArmorCurl, ArmorFalling, ArmorImpact, ArmorStun, WakeBlast, Press, Shot, Toy, Defeated };
+enum class BossState { Idle, Warning, Rush, Recovery, Dizzy, ArmorCurl, ArmorFalling, ArmorImpact, ArmorStun, WakeBlast, Press, Shot, Toy, ScrewRepair, Stage2Special, Defeated };
 enum class BossAttack { Press, Shot, Rush, Top, YoYo };
 
 class Boss {
@@ -31,7 +31,11 @@ public:
 	// PlayerをBossに所有させない（既存のクラス分担を維持）。
 	void SetTargetMotion(Vector2 velocity, bool grounded, bool usingWire);
 	void Update();
-	void TriggerAttackForEditor(BossAttack attack); // GUIから直接攻撃テスト
+	bool TriggerAttackForEditor(BossAttack attack); // 5技とも予兆から強制テスト
+	bool TriggerFlybyForEditor(int style); // ステージ2：0水平/1高高度/2急上昇/3 S字
+	bool BeginScrewRepair(int screwIndex);
+	bool IsRepairingScrew() const { return state_ == BossState::ScrewRepair; }
+	int RepairScrewIndex() const { return repairingScrew_; }
 	void Draw() const;
 
 	// グラップルの綱も外装剥がしに使う。第2引数はその判定。
@@ -71,6 +75,9 @@ public:
 	bool IsArmorFalling() const { return state_ == BossState::ArmorFalling || state_ == BossState::ArmorImpact; }
 	bool IsCoasterStage() const { return coasterStage_; }
 	void StartCoasterStage();
+	// ステージ2専用: 1=大型ミサイル、2=8の字カッター。予兆→攻撃→離脱を共有。
+	int GetStage2SpecialMode() const { return state_ == BossState::Stage2Special ? stage2SpecialMode_ : 0; }
+	int GetStage2SpecialFrame() const { return stateFrame_; }
 
 	void NoteWireMotion(bool usingWire); // プレイヤーのワイヤー使用をAIへ報告
 	Vector2 GetPosition() const { return position_; }
@@ -120,6 +127,15 @@ private:
 	BossVisualEffect visual_ = {};
 	Bullet bullets_[kMaxBullets] = {};
 
+	int repairingScrew_ = -1;
+	int flybyStyle_ = 0;
+	int stage2SpecialMode_ = 0;
+	int forcedFlybyStyle_ = -1;
+	float flybyStartY_ = 0.0f;
+	float flybyProgress_ = 0.0f;
+	int flybySequence_ = 0;
+	int stage2LastSlot_ = -1; // ステージ2の直前攻撃を記録
+	bool stage2FacingLeft_ = true; // 移動が遅くなっても機首方向を維持
 	int hp_ = kMaxHp;
 	// 第2段階は一度きり。再生中の連打でHP半分以下になったら強制復活する。
 	bool coasterStage_ = false;

@@ -1,4 +1,5 @@
 #include "AssetEditor.h"
+#include "CameraBackgroundTuning.h"
 // ============================================================================
 // 【このファイルの役割】PortalArena.cpp — ボス戦の床・杭・プレイヤー管理
 // 移動杭と外装ネジの座標をまとめ、プレイヤー更新へ渡す。背景/杭とプレイヤーは別々に描く。
@@ -9,6 +10,7 @@
 
 #include "PortalArena.h"
 #include "ExactPlayerBattle.h"
+#include "MiniUnityEditor.h"
 #include "PortalDraw.h"
 #include "PortalMath.h"
 #include "Texture.h"
@@ -29,9 +31,38 @@ using namespace PortalMath;
 namespace {
     constexpr Vector2 kCoasterAnchors[] = { {155, 495}, {480, 525}, {800, 525}, {1125, 495} };
     constexpr int kCoasterAnchorCount = 2; // Stage 2: fewer moving grip points
+    constexpr int kEditorGripCapacity = MiniUnityEditor::kMaxEditorGripPoints;
 
+    // 背景のみスクロール。ワールド座標/当たり判定へは干渉しない。
+    // 描画済み画像ハンドルを再利用するので、フレーム中に画像をロードしない。
+    bool DrawParallax(AssetEditor::Slot background) {
+        using namespace CameraBackgroundTuning;
+        const Settings& cfg = Current();
+        if (!cfg.parallax) return AssetEditor::DrawBackground(background);
+        const AssetEditor::Slot slots[3] = { background,AssetEditor::Custom1,AssetEditor::Custom2 };
+        bool drew = false;
+        for (int i = 0;i < 3;++i) {
+            const auto& a = AssetEditor::assets[slots[i]];
+            if (a.handle < 0 || a.width <= 0 || a.height <= 0) continue;
+            const float scale = AssetEditor::Scale(slots[i]);
+            const int w = (std::max)(1, int(1280.0f * scale));
+            const int h = (std::max)(1, int(720.0f * scale));
+            if (w > 8192 || h > 8192) continue;
+            const float raw = (cameraX - 640.0f) * cfg.speeds[i] + backgroundTime * cfg.autoSpeed[i];
+            const float wrapped = std::fmod(raw, float(w));
+            const float shift = wrapped < 0 ? wrapped + float(w) : wrapped;
+            const int y = (720 - h) / 2;
+            // 必要な枚数だけを描画。無制限の繰り返しを避ける。
+            for (int x = -int(shift) - w;x < 1280;x += w) {
+                Novice::DrawQuad(x, y, x + w, y, x, y + h, x + w, y + h,
+                    0, 0, a.width, a.height, a.handle, WHITE);
+            }
+            drew = true;
+        }
+        return drew;
+    }
     void DrawCoaster(int frame) {
-        if (!AssetEditor::DrawBackground(AssetEditor::Background2))
+        if (!DrawParallax(AssetEditor::Background2))
             PortalDraw::Box({ 640, 360 }, 1500, 800, 0x19364CFF);
         const int farShift = (frame % 240) * 3;
         for (int i = -1; i < 10; ++i) {
@@ -64,7 +95,9 @@ void PortalArena::Initialize() {
     player_.Initialize({ 420.0f,110.0f });
     ExactPlayerBattle::Reset();
     coasterStage_ = false;
-    frame_ = 0;stage2_.Reset();armorTension_.Reset();connected_ = false;mashPulse_ = false;
+    frame_ = 0;lastFailedYankFrame_ = -1000;
+    for (int i = 0; i < kMaxAnchors; ++i) movingGpRespawnAt_[i] = 0;
+    stage2_.Reset();armorTension_.Reset();connected_ = false;mashPulse_ = false;
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) { armorPointEnabled_[i] = false;armorPoints_[i] = {}; }
     for (int i = 0;i < kExtraBossPoints;++i) { extraPointEnabled_[i] = false;extraPoints_[i] = {}; }
 
@@ -104,8 +137,12 @@ void PortalArena::SetBossExtraTargets(const Vector2 points[kExtraBossPoints], co
 // 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
 // ------------------------------------------------------------------------
 bool PortalArena::Update() {
-    const int anchorCount = coasterStage_ ? kCoasterAnchorCount : anchorCount_;
+    const int anchorCount = coasterStage_ ? Stage2Tuning::values.gpCount : anchorCount_;
     const Vector2* anchors = anchors_;
+    Vector2 sceneGrips[kEditorGripCapacity]{};
+    const int additionalCount = MiniUnityEditor::CollectGripPoints(coasterStage_ ? 2 : 1,
+        sceneGrips, kEditorGripCapacity);
+    const int fixedCount = anchorCount + additionalCount;
     // 【注目】【入力取得】キーボード／ゲームパッドを共通形式へ変換。
     const PortalCommands commands = input_.Read();
     connected_ = commands.connected;
@@ -114,35 +151,86 @@ bool PortalArena::Update() {
     // 【ターゲット一覧】設定された移動用杭＋ボス外装の四隅ネジ4点。
     // 取り外した外装は巨大な距離へ追い出して選択できなくする。
     // 【注目】【目標配列】前半＝移動杭、後半＝ボスのネジ。固定杭の個数を境界としてPlayerに渡す。
-    Vector2 points[kMaxAnchors + BossBattleSettings::kArmorHooks + kExtraBossPoints] = {};
-    for (int i = 0;i < anchorCount;++i) points[i] = coasterStage_ ? stage2_.Anchor(i) : anchors[i];
-    for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) points[anchorCount + i] = armorPointEnabled_[i]
+    Vector2 points[kMaxAnchors + kEditorGripCapacity + BossBattleSettings::kArmorHooks + kExtraBossPoints] = {};
+    for (int i = 0; i < anchorCount; ++i) {
+        // 外れた流れるGPはサンプルの杭と同じ600F、選択対象に含めない。
+        points[i] = MovingGpAvailable(i)
+            ? (coasterStage_ ? stage2_.Anchor(i) : anchors[i])
+            : Vector2{ 100000.0f, 100000.0f };
+    }
+    for (int i = 0; i < additionalCount; ++i) points[anchorCount + i] = sceneGrips[i];
+    for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) points[fixedCount + i] = armorPointEnabled_[i]
         ? armorPoints_[i] : Vector2{ 100000.0f,100000.0f };
     // ジェットとパイプも部位剥がしの対象として数える。
     // 目と本体はBoss側で破壊不可にしている。
     // 【プレイヤー更新】敵に倒されていなければ物理・攻撃・触手を進める。
     for (int i = 0; i < kExtraBossPoints; ++i)
-        points[anchorCount + BossBattleSettings::kArmorHooks + i] = extraPointEnabled_[i]
+        points[fixedCount + BossBattleSettings::kArmorHooks + i] = extraPointEnabled_[i]
         ? extraPoints_[i] : Vector2{ 100000.0f,100000.0f };
     // Run the exact source physical simulation once, not PortalPlayer's old physics.
-    static bool f2Prev = false;
-    char modeKeys[256] = {}; Novice::GetHitKeyStateAll(modeKeys);
-    const bool f2Now = modeKeys[DIK_F2] != 0;
-    if (f2Now && !f2Prev) ExactPlayerBattle::SetAlternate(!ExactPlayerBattle::IsAlternate());
-    f2Prev = f2Now;
+    // 第2操作パターンは廃止。既存サンプルの非交互パターンのみ使用。
+    if (ExactPlayerBattle::IsAlternate()) ExactPlayerBattle::SetAlternate(false);
     if (!player_.IsDefeated()) {
-        ExactPlayerBattle::SetBossAnchorStart(anchorCount);
-        ExactPlayerBattle::Update(points, anchorCount + BossBattleSettings::kArmorHooks + kExtraBossPoints);
+        ExactPlayerBattle::SetMovingAnchorCount(coasterStage_ ? anchorCount : 0);
+        ExactPlayerBattle::SetBossAnchorStart(fixedCount);
+        // 第2ステージで機体が退場したら、ボスに繋がる触手だけ解除。
+        // 背景GPへの接続や、プレイヤーの移動物理は維持する。
+        if (coasterStage_ && bossOutsideScreen_)
+            ExactPlayerBattle::RequestReleaseBossGrips();
+        ExactPlayerBattle::Update(points, fixedCount + BossBattleSettings::kArmorHooks + kExtraBossPoints);
         const auto snap = ExactPlayerBattle::GetSnapshot();
+        // 第2ステージの背景GPが触手で引き抜かれたら、
+        // PortalArena側の描画・照準も消す。ボスのネジは対象外。
+        if (coasterStage_ && snap.peeledStake >= 0 && snap.peeledStake < anchorCount &&
+            snap.peeledStake < kMaxAnchors) {
+            movingGpRespawnAt_[snap.peeledStake] = frame_ + 600;
+        }
         player_.SyncSamplePose(snap.position, snap.velocity, snap.gripping, snap.pulling);
-        // Loosening is preparation, not damage. Only a real two-arm yank
-        // can produce an armor peel request. GP removal remains sample-owned.
-        const int part = armorTension_.Update(snap, anchorCount,
-            BossBattleSettings::kArmorHooks + kExtraBossPoints);
-        if (part >= 0) player_.QueueSampleArmorPeel(part);
+        // ネジは「命中時に距離で緩ませ100%」または
+        // 「ボスGP＋背景GPを引っ張る」いずれかで外せる。
+        // プレイヤーの2本触手の物理・巻き取り計算は変更しない。
+        const int part = armorTension_.Update(snap, fixedCount,
+            BossBattleSettings::kArmorHooks + kExtraBossPoints,
+            points, fixedCount + BossBattleSettings::kArmorHooks + kExtraBossPoints);
+        // 本体(0)と目(最終番号)は移動用GP。張力が足りても破壊要求しない。
+        if (part > 0 && part != BossBattleSettings::kArmorHooks + kExtraBossPoints - 1)
+            player_.QueueSampleArmorPeel(part);
+        // 実際に引っ張るイベントが発生したときだけ失敗判定する。
+        // 緩ませだけで外れた場合に失敗扱いしない。
+        if (BossCombatEditor::values.twoGripPeelEnabled &&
+            snap.yankTarget >= fixedCount && part < 0 &&
+            BossCombatEditor::values.failedYankDamage>0 && frame_ - lastFailedYankFrame_ >= 40) {
+            player_.TakeDamage(BossCombatEditor::values.failedYankDamage, player_.GetPosition());
+            lastFailedYankFrame_ = frame_;
+        }
     }
     ++frame_;
     return false;
+}
+// ボス巻き直し用インターフェイス。操作と触手シミュレーションは変更しない。
+int PortalArena::MostLooseScrew(float* loosenValue) const {
+    const int count = BossBattleSettings::kArmorHooks + kExtraBossPoints;
+    float best = 0.0f;int chosen = -1;
+    for (int i = 0;i < count;++i) {
+        if (!ScrewExists(i))continue;
+        const float value = armorTension_.Loosen(i);
+        if (value > best) { best = value;chosen = i; }
+    }
+    if (loosenValue)*loosenValue = best;
+    return chosen;
+}
+void PortalArena::TightenScrew(int index, float perFrame) {
+    if (ScrewExists(index))armorTension_.Tighten(index, perFrame);
+}
+bool PortalArena::ScrewExists(int index) const {
+    if (index >= 0 && index < BossBattleSettings::kArmorHooks)return armorPointEnabled_[index];
+    const int extra = index - BossBattleSettings::kArmorHooks;
+    return extra >= 0 && extra < kExtraBossPoints && extraPointEnabled_[extra];
+}
+Vector2 PortalArena::GetScrewWorldPosition(int index) const {
+    if (index >= 0 && index < BossBattleSettings::kArmorHooks)return armorPoints_[index];
+    const int extra = index - BossBattleSettings::kArmorHooks;
+    return extra >= 0 && extra < kExtraBossPoints ? extraPoints_[extra] : Vector2{};
 }
 // ------------------------------------------------------------------------
 // 【関数】PortalArena::DrawWorld()
@@ -150,8 +238,12 @@ bool PortalArena::Update() {
 // 読み方：引数を確認 → ifで早期終了する条件 → 最後に更新/戻り値を確認。
 // ------------------------------------------------------------------------
 void PortalArena::DrawWorld() const {
-    const int anchorCount = coasterStage_ ? kCoasterAnchorCount : anchorCount_;
+    const int anchorCount = coasterStage_ ? Stage2Tuning::values.gpCount : anchorCount_;
     const Vector2* anchors = anchors_;
+    Vector2 sceneGrips[kEditorGripCapacity]{};
+    const int additionalCount = MiniUnityEditor::CollectGripPoints(coasterStage_ ? 2 : 1,
+        sceneGrips, kEditorGripCapacity);
+    const int fixedCount = anchorCount + additionalCount;
     // 【描画制限対策】固定アリーナは背景1BOX＋床2BOXのみ。
     // 上空の出口や高い壁は置かず、ワイヤーを「攻撃回避」に使わせる。
     if (coasterStage_) {
@@ -167,7 +259,7 @@ void PortalArena::DrawWorld() const {
         }
     }
     else {
-        if (!AssetEditor::DrawBackground(AssetEditor::Background1))
+        if (!DrawParallax(AssetEditor::Background1))
             PortalDraw::Box({ 640.0f,360.0f }, 1500.0f, 800.0f, 0xAECBD7FF);
         PortalDraw::Box({ 640.0f,26.0f }, 1270.0f, 76.0f, 0x31364EFF);
 
@@ -185,6 +277,7 @@ void PortalArena::DrawWorld() const {
 
     }
     for (int i = 0;i < anchorCount;++i) {
+        if (!MovingGpAvailable(i)) continue;
         const Vector2 a = coasterStage_ ? stage2_.Anchor(i) : anchors[i];
         const float pulse = 4.0f + 2.5f * std::sin(frame_ * 0.13f + i);
         PortalDraw::Box(a, 32.0f + pulse, 32.0f + pulse, 0x734DC3FF);
@@ -196,6 +289,12 @@ void PortalArena::DrawWorld() const {
             PortalDraw::Box({ a.x,a.y + 27 }, 35, 3, 0xFFFFFFFF);
             PortalDraw::Box({ a.x,a.y - 27 }, 35, 3, 0xFFFFFFFF);
         }
+    }
+    // ImGuiで配置したGP：実際に触手の接続候補となる点を強調表示。
+    for (int i = 0; i < additionalCount; ++i) {
+        const Vector2 p = sceneGrips[i];
+        PortalDraw::Box(p, 24.0f, 24.0f, 0xAD78EFFF);
+        PortalDraw::Box(p, 13.0f, 13.0f, 0xFFE0B5FF);
     }
     // Remaining screw heads show persistent looseness (amber ring).
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) {
@@ -209,20 +308,21 @@ void PortalArena::DrawWorld() const {
     // 【ボス外装の取っ掛かり】照準が合ったネジだけ白い四角で強調する。
     // 通常はボス自身が十字を描くので追加描画は選択中の2BOXだけ。
     for (int i = 0;i < BossBattleSettings::kArmorHooks;++i) if (armorPointEnabled_[i] &&
-        player_.GetSelectedAnchor() == anchorCount + i) {
+        player_.GetSelectedAnchor() == fixedCount + i) {
         const Vector2 p = armorPoints_[i];
         PortalDraw::Box({ p.x,p.y + 13.0f }, 24, 3, 0xFFFFFFFF);
         PortalDraw::Box({ p.x,p.y - 13.0f }, 24, 3, 0xFFFFFFFF);
     }
     const int idx = player_.GetSelectedAnchor();
-    const int armorEnd = anchorCount + BossBattleSettings::kArmorHooks;
+    const int armorEnd = fixedCount + BossBattleSettings::kArmorHooks;
     const int total = armorEnd + kExtraBossPoints;
     if (idx >= 0 && idx < total) {
         Vector2 p = {};
         bool valid = false;
-        if (idx < anchorCount) { p = coasterStage_ ? stage2_.Anchor(idx) : anchors[idx]; valid = true; }
+        if (idx < anchorCount) { p = coasterStage_ ? stage2_.Anchor(idx) : anchors[idx]; valid = MovingGpAvailable(idx); }
+        else if (idx < fixedCount) { p = sceneGrips[idx - anchorCount]; valid = true; }
         else if (idx < armorEnd) {
-            const int part = idx - anchorCount;
+            const int part = idx - fixedCount;
             p = armorPoints_[part];valid = armorPointEnabled_[part];
         }
         else {
@@ -281,12 +381,20 @@ void PortalArena::DrawHUD() const {
         player_.IsSpinning() ? "AIR SPIN ATTACK" :
         player_.GetSelectedAnchor() >= 0 ? "LOCK: HOLD RIGHT STICK -> AUTO GRAPPLE" : "RIGHT STICK: INSTANT TENTACLE ATTACK";
     const int target = player_.GetSelectedAnchor();
-    const int anchorCount = coasterStage_ ? kCoasterAnchorCount : anchorCount_;
-    if (target >= anchorCount && target < anchorCount + BossBattleSettings::kArmorHooks)
+    const int anchorCount = coasterStage_ ? Stage2Tuning::values.gpCount : anchorCount_;
+    Vector2 sceneGrips[kEditorGripCapacity]{};
+    const int extraGP = MiniUnityEditor::CollectGripPoints(coasterStage_ ? 2 : 1, sceneGrips, kEditorGripCapacity);
+    const int fixedCount = anchorCount + extraGP;
+    if (target >= anchorCount && target < fixedCount)
+        status = "SCENE GP: GRAPPLE FOR DODGE";
+    else if (target >= fixedCount && target < fixedCount + BossBattleSettings::kArmorHooks)
         status = "BOSS SCREW: WIND TO LOOSEN, TWO-ARM YANK TO PEEL";
-    else if (target >= anchorCount + BossBattleSettings::kArmorHooks)
+    else if (target >= fixedCount + BossBattleSettings::kArmorHooks)
         status = "BOSS POINT: GRAPPLE TO MOVE";
     Novice::ScreenPrintf(18, 52, "%s  /  %s", connected_ ? "GAMEPAD" : "KEYBOARD", status);
+    const int yankState = armorTension_.LastYankState();
+    if (yankState == 1) Novice::ScreenPrintf(18, 127, "YANK: TENSION OK (armor only)");
+    else if (yankState == 2) Novice::ScreenPrintf(18, 127, "YANK FAILED: LOOSEN FIRST OR USE FARTHER GP");
     const int screw = armorTension_.DisplayTarget();
     if (screw >= 0) {
         const float loose = armorTension_.Loosen(screw);
@@ -312,10 +420,10 @@ void PortalArena::DrawHUD() const {
 }
 
 // Stage 2 only. No changes to sample player movement or tentacle rendering.
-void PortalArena::UpdateStage2(Vector2 bossPosition, int bossHp, int bossMaxHp) {
+void PortalArena::UpdateStage2(Vector2 bossPosition, int bossHp, int bossMaxHp, int specialMode, int specialFrame) {
     if (!coasterStage_) return;
     stage2_.Update(player_.GetPosition(), bossPosition, bossHp, bossMaxHp,
-        player_.IsGripping() || player_.HasWireMomentum());
+        player_.IsGripping() || player_.HasWireMomentum(), specialMode, specialFrame);
 }
 int PortalArena::Stage2HitPlayer(Vector2 player, Vector2* source) {
     return coasterStage_ ? stage2_.CheckHit(player, 24.0f, source) : 0;

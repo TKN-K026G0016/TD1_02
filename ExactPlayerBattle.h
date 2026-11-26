@@ -8,6 +8,9 @@ namespace ExactPlayerBattle {
         int yankTarget = -1; float yankGap = 0.0f;
     };
     void SetBossAnchorStart(int index);
+    // 第2ステージでスクロールする背景GPの個数（0なら通常ステージ）。
+    void SetMovingAnchorCount(int count);
+    void RequestReleaseBossGrips();
     int BossAnchorStart();
     void Reset();
     void SetAlternate(bool alternate);

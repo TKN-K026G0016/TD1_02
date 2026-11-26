@@ -2,6 +2,7 @@
 #include "PortalInput.h"
 #include "PortalTentacle.h"
 #include "PortalConfig.h"
+#include "StageCollision.h"
 
 // 衝突した攻撃の種類。Stage.cppがダメージ計算に使う。
 enum class PortalAttackKind { None, Normal, Spin, Grapple };
@@ -25,6 +26,8 @@ public:
     // ボスが外装スタンから復帰した衝撃。無敵時間とは別に速度だけ吹き飛ばす。
     void ApplyWakeBlast(Vector2 bossPosition, float pushX, float downSpeed); // -1:なし、0..2:剥がしたい外装番号（Stageへ一度だけ通知）
     void Draw() const;
+    // エディターで配置した床・壁との衝突だけ補正。既存移動・触手物理は変更しない。
+    void ResolveStageColliders(Vector2 previousPosition, const StageCollision::Rect* rects, int count);
     const Vector2& GetPosition() const { return position_; }
     void SyncSamplePose(Vector2 pos, Vector2 vel, bool gripping, bool pulling);
     void QueueSampleArmorPeel(int armorIndex) { if (armorIndex >= 0)armorPeelRequest_ = armorIndex; }
