@@ -14,13 +14,15 @@ public:
         for (int i = 0; i < 4; ++i) { missiles_[i] = {}; }
     }
     void Update(Vector2 player, Vector2 boss, int bossHp, int bossMaxHp, bool usingGrip) {
+        (void)usingGrip;
+
         ++frame_; ++cycleFrame_;
         if (cycleFrame_ >= 540) cycleFrame_ = 0;
         if (hitTimer_ > 0) --hitTimer_;
         split_ = bossMaxHp > 0 && bossHp * 2 <= bossMaxHp;
         // Both grapple routes remain usable: the exposed GP coordinates move with the scenery.
-        if (usingGrip && Dist2(player, boss) < 260.0f * 260.0f)
-            loosen_ = Min(100.0f, loosen_ + 0.40f);
+        // Grip near boss alone no longer counts as screw damage.
+        // ArmorTensionSystem owns screw-by-screw loosening.
         if (cycleFrame_ >= 20 && cycleFrame_ < 170 && cycleFrame_ % 65 == 20) {
             for (int i = 0; i < 4; ++i) if (!missiles_[i].active) {
                 // Bullet-Bill style: large missile exits from the aircraft,
@@ -126,12 +128,9 @@ public:
     void DrawHud() const {
         const char* move = CurrentPattern() == Pattern::Homing ? "LARGE MISSILES - GRAPPLE DODGE" :
             CurrentPattern() == Pattern::Cutter ? "FIGURE-8 CUTTER - LOOSEN SCREW" :
-            CanCounter() ? "COUNTER WINDOW - PEEL NOW" : "WAIT / PREPARE";
+            CanCounter() ? "OPENING - PREPARE TWO-ARM PEEL" : "WAIT / PREPARE";
         Novice::ScreenPrintf(18, 232, "STAGE 2: %s", move);
-        Novice::DrawBox(18, 254, 202, 12, 0, 0x253044FF, kFillModeSolid);
-        Novice::DrawBox(19, 255, static_cast<int>(loosen_ * 2.0f), 10, 0,
-            loosen_ >= 100.0f ? 0x62E7A7FF : 0xFFCB6AFF, kFillModeSolid);
-        Novice::ScreenPrintf(18, 272, "SCREW LOOSEN %d%% - grip near boss", static_cast<int>(loosen_));
+        Novice::ScreenPrintf(18, 254, "ARMOR: WIND SCREWS FIRST, THEN YANK WITH BOTH ARMS");
         if (split_) Novice::ScreenPrintf(18, 291, "COASTER SPLIT: CENTER GAP (VISUAL PROTOTYPE)");
     }
 private:

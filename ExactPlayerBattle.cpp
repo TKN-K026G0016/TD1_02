@@ -1,3 +1,4 @@
+#include "AssetEditor.h"
 #include <Novice.h>
 #include <math.h>
 #include <time.h>
@@ -13,7 +14,7 @@ namespace ExactSampleNonAlternateBattle {
 	const int kPixelScale = 2;                       // 絵の拡大率
 	const int kTileSize = 32 * kPixelScale;          // 床・杭の絵1枚の大きさ(px)
 	const float kFloorY = 656.0f;                    // 床の上面のY。左右と上の端も壁
-	const int kStakeNum = 7;                         // 杭の数(配置は kStakePos)
+	const int kStakeNum = 24;                         // 杭の数(配置は kStakePos)
 
 	struct Vector2 {
 		float x;
@@ -330,57 +331,53 @@ namespace ExactSampleNonAlternateBattle {
 		if (!initialized) srand(static_cast<unsigned int>(time(nullptr)));
 
 		// スプライト読み込み
-		static int playerIdleTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_idle.png");
-		static int playerWalkTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_walk.png");
-		static int playerJumpTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_jump.png");
-		static int playerFallTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_fall.png");
-		static int tentacleTex = Novice::LoadTexture("./resources/texture/player/video_sample/tentacle.png");
-		static int gateTex = Novice::LoadTexture("./resources/texture/player/video_sample/gate.png");
+		int playerIdleTex = AssetEditor::Handle(AssetEditor::PlayerIdle);
+		int playerWalkTex = AssetEditor::Handle(AssetEditor::PlayerWalk);
+		int playerJumpTex = AssetEditor::Handle(AssetEditor::PlayerJump);
+		int playerFallTex = AssetEditor::Handle(AssetEditor::PlayerFall);
+		int tentacleTex = AssetEditor::Handle(AssetEditor::Tentacle);
+		int gateTex = AssetEditor::Handle(AssetEditor::Gate);
 		static int blockTex = Novice::LoadTexture("./resources/texture/player/video_sample/chip_block.png");
 
 		// 自動照準のマーク(無ければ -1 のまま。仮の丸で描く)
-		static int gripMarkTex = -1;
-		{
-			FILE* markFile = nullptr;
-			fopen_s(&markFile, "./resources/texture/player/video_sample/grip_mark.png", "rb");
-			if (markFile != nullptr) {
-				fclose(markFile);
-				gripMarkTex = Novice::LoadTexture("./resources/texture/player/video_sample/grip_mark.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int gripMarkTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/grip_mark.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// 入力方向の矢印(無ければ -1。仮の丸で描く)
-		static int aimArrowTex = -1;
-		{
-			FILE* arrowFile = nullptr;
-			fopen_s(&arrowFile, "./resources/texture/player/video_sample/aim_arrow.png", "rb");
-			if (arrowFile != nullptr) {
-				fclose(arrowFile);
-				aimArrowTex = Novice::LoadTexture("./resources/texture/player/video_sample/aim_arrow.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int aimArrowTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/aim_arrow.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// L/R表示(無ければ -1。仮の丸で描く)
-		static int lrTex = -1;
-		{
-			FILE* lrFile = nullptr;
-			fopen_s(&lrFile, "./resources/texture/player/video_sample/ui_lr.png", "rb");
-			if (lrFile != nullptr) {
-				fclose(lrFile);
-				lrTex = Novice::LoadTexture("./resources/texture/player/video_sample/ui_lr.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int lrTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/ui_lr.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// L/Rの周りを回る半円矢印2本(無ければ -1。仮の丸枠で描く)
-		static int cycleTex = -1;
-		{
-			FILE* cycleFile = nullptr;
-			fopen_s(&cycleFile, "./resources/texture/player/video_sample/ui_cycle.png", "rb");
-			if (cycleFile != nullptr) {
-				fclose(cycleFile);
-				cycleTex = Novice::LoadTexture("./resources/texture/player/video_sample/ui_cycle.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int cycleTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/ui_cycle.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// 数字スプライト(無ければ -1。ScreenPrintf で出す)
 		static auto LoadOptionalTexture = [](const char* path) -> int {
@@ -564,14 +561,34 @@ namespace ExactSampleNonAlternateBattle {
 			ResetStakes();
 			initialized = true;
 		}
+		if (update) {
+			snapshot.yankTarget = -1;
+			snapshot.yankGap = 0.0f;
+			for (int h = 0; h < 2; ++h) {
+				snapshot.loosenTarget[h] = -1;
+				snapshot.loosenDelta[h] = 0.0f;
+			}
+		}
 		if (anchors && anchorCount > 0 && update) {
 			for (int i = 0;i < kStakeNum;++i) {
 				if (i < anchorCount) {
 					// Boss uses a world Y-up coordinate system; sample uses screen Y-down.
 					stakes[i].pos = { anchors[i].x, 720.0f - anchors[i].y };
+					if (i >= ExactPlayerBattle::BossAnchorStart()) {
+						// Boss screws remain available until the armor system removes them.
+						stakes[i].goneFrames = (anchors[i].x > 10000.0f) ? 999999 : 0;
+					}
 				}
 				else {
 					stakes[i].goneFrames = 999999;
+				}
+			}
+			// Boss targets move with their aircraft; ordinary grip points preserve sample motion.
+			for (int h = 0; h < 2; ++h) {
+				const int idx = sets[h].gripIdx;
+				if (sets[h].isActive && idx >= ExactPlayerBattle::BossAnchorStart() &&
+					idx < anchorCount && sets[h].gripPhase != kGripUnwind) {
+					sets[h].gripPos = stakes[idx].pos;
 				}
 			}
 		}
@@ -987,7 +1004,18 @@ namespace ExactSampleNonAlternateBattle {
 						// 限界まで伸びたら自動で外れる。もう片方の杭とこの杭が遠ければ抜く
 						float peelGapX = rs.gripPos.x - reelPos[otherIdx].x;
 						float peelGapY = rs.gripPos.y - reelPos[otherIdx].y;
-						if (sqrtf(peelGapX * peelGapX + peelGapY * peelGapY) >= kPeelNeedLen) {
+						const float gap = sqrtf(peelGapX * peelGapX + peelGapY * peelGapY);
+						if (rs.gripIdx >= ExactPlayerBattle::BossAnchorStart()) {
+							// Boss screws are never destroyed by the sample's stake HP.
+							// Emit the same two-arm tug for the armor tension controller.
+							if (sets[otherIdx].gripIdx >= 0 &&
+								sets[otherIdx].gripIdx < ExactPlayerBattle::BossAnchorStart()) {
+								snapshot.yankTarget = rs.gripIdx;
+								snapshot.yankGap = gap;
+							}
+							stakes[rs.gripIdx].shakeUntil = frameCount + kStakeShakeFrames;
+						}
+						else if (gap >= kPeelNeedLen) {
 							SpawnPeel(rs.gripPos.x, rs.gripPos.y, ropeDx / ropeDist * kPeelPieceSpeed, ropeDy / ropeDist * kPeelPieceSpeed - 3.0f);
 							RemoveStake(rs.gripIdx);
 							AddPopup(rs.gripPos.x, rs.gripPos.y, 0);
@@ -1145,7 +1173,13 @@ namespace ExactSampleNonAlternateBattle {
 										float reelDmg = kStakeHpMax / kStakeFullReels * distRate * (reelProg * reelProg - ts.pullProg * ts.pullProg);
 										ts.pullProg = reelProg;
 										Stake& gs = stakes[ts.gripIdx];
-										gs.hp -= reelDmg;
+										if (ts.gripIdx >= ExactPlayerBattle::BossAnchorStart()) {
+											snapshot.loosenTarget[s] = ts.gripIdx;
+											snapshot.loosenDelta[s] += reelDmg / kStakeHpMax;
+										}
+										else {
+											gs.hp -= reelDmg;
+										}
 										if (reelDmg > 0.05f) {
 											gs.shakeUntil = frameCount + kStakeShakeFrames;
 										}
@@ -1711,18 +1745,28 @@ namespace ExactSampleNonAlternateBattle {
 					}
 				}
 
-				// プレイヤー(左向きは左右の角を入れ替えて反転)
+				// プレイヤー画像だけ描画倍率を1.0倍に固定する。
+				// 1コマ64x64pxの画像は、ゲーム画面でも64x64pxで表示する。
+				// kPlayerW/Hは物理・当たり判定用のため変更しない。
 				{
-					float sideX = player.isFacingRight ? kPlayerHalfW : -kPlayerHalfW;
-					float cx = player.pos.x;
-					float cy = player.pos.y;
-					Novice::DrawQuad(
-						static_cast<int>(cx - sideX), static_cast<int>(cy - kPlayerHalfH),
-						static_cast<int>(cx + sideX), static_cast<int>(cy - kPlayerHalfH),
-						static_cast<int>(cx - sideX), static_cast<int>(cy + kPlayerHalfH),
-						static_cast<int>(cx + sideX), static_cast<int>(cy + kPlayerHalfH),
-						animationFrame* kPlayerSpriteW, 0, kPlayerSpriteW, kPlayerSpriteH,
-						playerTex, 0xFFFFFFFF);
+					constexpr float kPlayerDrawScale = 1.0f; // 描画倍率：等倍
+					const AssetEditor::FrameSource frameSource = AssetEditor::GetFrame(
+						AssetEditor::PlayerSlotForHandle(playerTex), animationFrame);
+					if (playerTex >= 0) {
+						const float drawW = static_cast<float>(frameSource.w) * kPlayerDrawScale;
+						const float drawH = static_cast<float>(frameSource.h) * kPlayerDrawScale;
+						const float sideX = (player.isFacingRight ? 1.0f : -1.0f) * drawW * 0.5f;
+						const float cx = player.pos.x;
+						const float drawBottomY = player.pos.y + kPlayerHalfH;
+						const float drawTopY = drawBottomY - drawH;
+						Novice::DrawQuad(
+							static_cast<int>(cx - sideX), static_cast<int>(drawTopY),
+							static_cast<int>(cx + sideX), static_cast<int>(drawTopY),
+							static_cast<int>(cx - sideX), static_cast<int>(drawBottomY),
+							static_cast<int>(cx + sideX), static_cast<int>(drawBottomY),
+							frameSource.x, frameSource.y, frameSource.w, frameSource.h,
+							playerTex, 0xFFFFFFFF);
+					}
 				}
 
 				// L/R表示:プレイヤーの左下にL、右下にR(触手の色で色分け)。
@@ -1901,6 +1945,13 @@ namespace ExactSampleNonAlternateBattle {
 		snapshot.gripping = false;
 		snapshot.pulling = false;
 		snapshot.gripIndex = -1;
+		for (int h = 0; h < 2; ++h) {
+			snapshot.handGripIndex[h] =
+				(sets[h].isActive && sets[h].state == kSetOut &&
+					sets[h].gripPhase != kGripUnwind) ? sets[h].gripIdx : -1;
+			snapshot.handPulling[h] = snapshot.handGripIndex[h] >= 0 &&
+				sets[h].gripPhase == kGripPull;
+		}
 		if (update) snapshot.peeledStake = stakeRemovedThisFrame;
 		for (int s = 0;s < 2;++s) {
 			if (sets[s].isActive && sets[s].state == kSetOut &&
@@ -1921,7 +1972,7 @@ namespace ExactSampleAlternateBattle {
 	const int kPixelScale = 2;                       // 絵の拡大率
 	const int kTileSize = 32 * kPixelScale;          // 床・杭の絵1枚の大きさ(px)
 	const float kFloorY = 656.0f;                    // 床の上面のY。左右と上の端も壁
-	const int kStakeNum = 7;                         // 杭の数(配置は kStakePos)
+	const int kStakeNum = 24;                         // 杭の数(配置は kStakePos)
 
 	struct Vector2 {
 		float x;
@@ -2242,57 +2293,53 @@ namespace ExactSampleAlternateBattle {
 		if (!initialized) srand(static_cast<unsigned int>(time(nullptr)));
 
 		// スプライト読み込み
-		static int playerIdleTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_idle.png");
-		static int playerWalkTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_walk.png");
-		static int playerJumpTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_jump.png");
-		static int playerFallTex = Novice::LoadTexture("./resources/texture/player/video_sample/player_fall.png");
-		static int tentacleTex = Novice::LoadTexture("./resources/texture/player/video_sample/tentacle.png");
-		static int gateTex = Novice::LoadTexture("./resources/texture/player/video_sample/gate.png");
+		int playerIdleTex = AssetEditor::Handle(AssetEditor::PlayerIdle);
+		int playerWalkTex = AssetEditor::Handle(AssetEditor::PlayerWalk);
+		int playerJumpTex = AssetEditor::Handle(AssetEditor::PlayerJump);
+		int playerFallTex = AssetEditor::Handle(AssetEditor::PlayerFall);
+		int tentacleTex = AssetEditor::Handle(AssetEditor::Tentacle);
+		int gateTex = AssetEditor::Handle(AssetEditor::Gate);
 		static int blockTex = Novice::LoadTexture("./resources/texture/player/video_sample/chip_block.png");
 
 		// 自動照準のマーク(無ければ -1 のまま。仮の丸で描く)
-		static int gripMarkTex = -1;
-		{
-			FILE* markFile = nullptr;
-			fopen_s(&markFile, "./resources/texture/player/video_sample/grip_mark.png", "rb");
-			if (markFile != nullptr) {
-				fclose(markFile);
-				gripMarkTex = Novice::LoadTexture("./resources/texture/player/video_sample/grip_mark.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int gripMarkTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/grip_mark.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// 入力方向の矢印(無ければ -1。仮の丸で描く)
-		static int aimArrowTex = -1;
-		{
-			FILE* arrowFile = nullptr;
-			fopen_s(&arrowFile, "./resources/texture/player/video_sample/aim_arrow.png", "rb");
-			if (arrowFile != nullptr) {
-				fclose(arrowFile);
-				aimArrowTex = Novice::LoadTexture("./resources/texture/player/video_sample/aim_arrow.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int aimArrowTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/aim_arrow.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// L/R表示(無ければ -1。仮の丸で描く)
-		static int lrTex = -1;
-		{
-			FILE* lrFile = nullptr;
-			fopen_s(&lrFile, "./resources/texture/player/video_sample/ui_lr.png", "rb");
-			if (lrFile != nullptr) {
-				fclose(lrFile);
-				lrTex = Novice::LoadTexture("./resources/texture/player/video_sample/ui_lr.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int lrTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/ui_lr.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// L/Rの周りを回る半円矢印2本(無ければ -1。仮の丸枠で描く)
-		static int cycleTex = -1;
-		{
-			FILE* cycleFile = nullptr;
-			fopen_s(&cycleFile, "./resources/texture/player/video_sample/ui_cycle.png", "rb");
-			if (cycleFile != nullptr) {
-				fclose(cycleFile);
-				cycleTex = Novice::LoadTexture("./resources/texture/player/video_sample/ui_cycle.png");
-			}
-		}
+		// 1フレームごとにLoadTextureするとテクスチャ管理が溢れるため、初回のみ読み込む。
+		static const int cycleTex = []() -> int {
+			const char* path = "./resources/texture/player/video_sample/ui_cycle.png";
+			FILE* fp = nullptr;
+			if (fopen_s(&fp, path, "rb") != 0 || !fp) return -1;
+			fclose(fp);
+			return Novice::LoadTexture(path);
+			}();
 
 		// 数字スプライト(無ければ -1。ScreenPrintf で出す)
 		static auto LoadOptionalTexture = [](const char* path) -> int {
@@ -2476,14 +2523,34 @@ namespace ExactSampleAlternateBattle {
 			ResetStakes();
 			initialized = true;
 		}
+		if (update) {
+			snapshot.yankTarget = -1;
+			snapshot.yankGap = 0.0f;
+			for (int h = 0; h < 2; ++h) {
+				snapshot.loosenTarget[h] = -1;
+				snapshot.loosenDelta[h] = 0.0f;
+			}
+		}
 		if (anchors && anchorCount > 0 && update) {
 			for (int i = 0;i < kStakeNum;++i) {
 				if (i < anchorCount) {
 					// Boss uses a world Y-up coordinate system; sample uses screen Y-down.
 					stakes[i].pos = { anchors[i].x, 720.0f - anchors[i].y };
+					if (i >= ExactPlayerBattle::BossAnchorStart()) {
+						// Boss screws remain available until the armor system removes them.
+						stakes[i].goneFrames = (anchors[i].x > 10000.0f) ? 999999 : 0;
+					}
 				}
 				else {
 					stakes[i].goneFrames = 999999;
+				}
+			}
+			// Boss targets move with their aircraft; ordinary grip points preserve sample motion.
+			for (int h = 0; h < 2; ++h) {
+				const int idx = sets[h].gripIdx;
+				if (sets[h].isActive && idx >= ExactPlayerBattle::BossAnchorStart() &&
+					idx < anchorCount && sets[h].gripPhase != kGripUnwind) {
+					sets[h].gripPos = stakes[idx].pos;
 				}
 			}
 		}
@@ -2908,7 +2975,18 @@ namespace ExactSampleAlternateBattle {
 						// 限界まで伸びたら自動で外れる。もう片方の杭とこの杭が遠ければ抜く
 						float peelGapX = rs.gripPos.x - reelPos[otherIdx].x;
 						float peelGapY = rs.gripPos.y - reelPos[otherIdx].y;
-						if (sqrtf(peelGapX * peelGapX + peelGapY * peelGapY) >= kPeelNeedLen) {
+						const float gap = sqrtf(peelGapX * peelGapX + peelGapY * peelGapY);
+						if (rs.gripIdx >= ExactPlayerBattle::BossAnchorStart()) {
+							// Boss screws are never destroyed by the sample's stake HP.
+							// Emit the same two-arm tug for the armor tension controller.
+							if (sets[otherIdx].gripIdx >= 0 &&
+								sets[otherIdx].gripIdx < ExactPlayerBattle::BossAnchorStart()) {
+								snapshot.yankTarget = rs.gripIdx;
+								snapshot.yankGap = gap;
+							}
+							stakes[rs.gripIdx].shakeUntil = frameCount + kStakeShakeFrames;
+						}
+						else if (gap >= kPeelNeedLen) {
 							SpawnPeel(rs.gripPos.x, rs.gripPos.y, ropeDx / ropeDist * kPeelPieceSpeed, ropeDy / ropeDist * kPeelPieceSpeed - 3.0f);
 							RemoveStake(rs.gripIdx);
 							AddPopup(rs.gripPos.x, rs.gripPos.y, 0);
@@ -3095,7 +3173,13 @@ namespace ExactSampleAlternateBattle {
 										float reelDmg = kStakeHpMax / kStakeFullReels * distRate * (reelProg * reelProg - ts.pullProg * ts.pullProg);
 										ts.pullProg = reelProg;
 										Stake& gs = stakes[ts.gripIdx];
-										gs.hp -= reelDmg;
+										if (ts.gripIdx >= ExactPlayerBattle::BossAnchorStart()) {
+											snapshot.loosenTarget[s] = ts.gripIdx;
+											snapshot.loosenDelta[s] += reelDmg / kStakeHpMax;
+										}
+										else {
+											gs.hp -= reelDmg;
+										}
 										if (reelDmg > 0.05f) {
 											gs.shakeUntil = frameCount + kStakeShakeFrames;
 										}
@@ -3665,18 +3749,28 @@ namespace ExactSampleAlternateBattle {
 					}
 				}
 
-				// プレイヤー(左向きは左右の角を入れ替えて反転)
+				// プレイヤー画像だけ描画倍率を1.0倍に固定する。
+				// 1コマ64x64pxの画像は、ゲーム画面でも64x64pxで表示する。
+				// kPlayerW/Hは物理・当たり判定用のため変更しない。
 				{
-					float sideX = player.isFacingRight ? kPlayerHalfW : -kPlayerHalfW;
-					float cx = player.pos.x;
-					float cy = player.pos.y;
-					Novice::DrawQuad(
-						static_cast<int>(cx - sideX), static_cast<int>(cy - kPlayerHalfH),
-						static_cast<int>(cx + sideX), static_cast<int>(cy - kPlayerHalfH),
-						static_cast<int>(cx - sideX), static_cast<int>(cy + kPlayerHalfH),
-						static_cast<int>(cx + sideX), static_cast<int>(cy + kPlayerHalfH),
-						animationFrame* kPlayerSpriteW, 0, kPlayerSpriteW, kPlayerSpriteH,
-						playerTex, 0xFFFFFFFF);
+					constexpr float kPlayerDrawScale = 1.0f; // 描画倍率：等倍
+					const AssetEditor::FrameSource frameSource = AssetEditor::GetFrame(
+						AssetEditor::PlayerSlotForHandle(playerTex), animationFrame);
+					if (playerTex >= 0) {
+						const float drawW = static_cast<float>(frameSource.w) * kPlayerDrawScale;
+						const float drawH = static_cast<float>(frameSource.h) * kPlayerDrawScale;
+						const float sideX = (player.isFacingRight ? 1.0f : -1.0f) * drawW * 0.5f;
+						const float cx = player.pos.x;
+						const float drawBottomY = player.pos.y + kPlayerHalfH;
+						const float drawTopY = drawBottomY - drawH;
+						Novice::DrawQuad(
+							static_cast<int>(cx - sideX), static_cast<int>(drawTopY),
+							static_cast<int>(cx + sideX), static_cast<int>(drawTopY),
+							static_cast<int>(cx - sideX), static_cast<int>(drawBottomY),
+							static_cast<int>(cx + sideX), static_cast<int>(drawBottomY),
+							frameSource.x, frameSource.y, frameSource.w, frameSource.h,
+							playerTex, 0xFFFFFFFF);
+					}
 				}
 
 				// L/R表示:プレイヤーの左下にL、右下にR(触手の色で色分け)。
@@ -3857,6 +3951,13 @@ namespace ExactSampleAlternateBattle {
 		snapshot.gripping = false;
 		snapshot.pulling = false;
 		snapshot.gripIndex = -1;
+		for (int h = 0; h < 2; ++h) {
+			snapshot.handGripIndex[h] =
+				(sets[h].isActive && sets[h].state == kSetOut &&
+					sets[h].gripPhase != kGripUnwind) ? sets[h].gripIdx : -1;
+			snapshot.handPulling[h] = snapshot.handGripIndex[h] >= 0 &&
+				sets[h].gripPhase == kGripPull;
+		}
 		if (update) snapshot.peeledStake = stakeRemovedThisFrame;
 		for (int s = 0;s < 2;++s) {
 			if (sets[s].isActive && sets[s].state == kSetOut &&
@@ -3876,6 +3977,9 @@ namespace ExactPlayerBattle {
 	static bool alternate = false;
 	static bool pendingReset = true;
 	static Snapshot current = {};
+	static int bossAnchorStart = 24;
+	void SetBossAnchorStart(int index) { bossAnchorStart = index; }
+	int BossAnchorStart() { return bossAnchorStart; }
 	void Reset() { pendingReset = true; current = {}; }
 	void SetAlternate(bool value) { if (alternate != value) { alternate = value; pendingReset = true; } }
 	bool IsAlternate() { return alternate; }

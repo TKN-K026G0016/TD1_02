@@ -16,6 +16,8 @@
 #include <dinput.h>
 #include <cstring>
 #include "BossBattleSettings.h"
+#include "FinalTuningEditor.h"
+#include "AssetEditor.h"
 #include "PortalMath.h"
 #include "CreatorGameRuntime.h"
 #ifdef USE_IMGUI
@@ -60,8 +62,13 @@ static void ResetStageBattle(StageId stage) {
 }
 
 #ifdef USE_IMGUI
-static bool showBattleEditor = true;
+// 旧F5/F6/F9を1つのウィンドウへ統合する。
+static bool showGameEditor = false;
+static int editorRequestedTab = 0; // 0:調整 1:画像 2:詳細 3:デバッグ
+static bool f5Prev = false;
+static bool f6Prev = false;
 static bool f9Prev = false;
+static char gameEditorStatus[256] = "保存ボタンで画像とボス設定をまとめて記録できます。";
 static bool battleEditorDirty = false;
 static char battleEditorMessage[128] = "Change values, then Save";
 static bool ResetBossBattleFromEditor() {
@@ -71,10 +78,7 @@ static bool ResetBossBattleFromEditor() {
 }
 
 // すべてワールド座標(+Yが上)。UIの入力値はBossBattleSettingsで検証してから反映。
-static void DrawBossBattleEditor() {
-    if (!showBattleEditor) return;
-    ImGui::SetNextWindowSize(ImVec2(425, 625), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Boss Battle Editor", &showBattleEditor)) { ImGui::End(); return; }
+static void DrawBossBattleEditorContents() {
     ImGui::TextUnformatted("Edit while playing / F8: reload saved settings");
     if (ImGui::CollapsingHeader("Creator editor integration")) {
         ImGui::Checkbox("Show stage tiles", &creatorRuntime.showStage);
@@ -202,13 +206,13 @@ static void DrawBossBattleEditor() {
     }
     if (!liveBattleConfig.Valid()) ImGui::TextColored(ImVec4(1, 0.35f, 0.35f, 1), "Invalid setting; change it back before saving");
     if (ImGui::Button("Save TXT")) {
-        if (liveBattleConfig.Save()) { battleEditorDirty = false; strcpy_s(battleEditorMessage, "Saved bossbattle_stage1.txt"); }
+        if (liveBattleConfig.Save(AssetEditor::BossSettingsPath().c_str())) { battleEditorDirty = false; strcpy_s(battleEditorMessage, "Saved bossbattle_stage1.txt"); }
         else strcpy_s(battleEditorMessage, "Save failed: invalid values/path");
     }
     ImGui::SameLine();
     if (ImGui::Button("Load TXT")) {
         BossBattleSettings loaded;
-        if (loaded.Load()) { liveBattleConfig = loaded; ResetBossBattleFromEditor(); battleEditorDirty = false; strcpy_s(battleEditorMessage, "Loaded and restarted"); }
+        if (loaded.Load(AssetEditor::BossSettingsPath().c_str())) { liveBattleConfig = loaded; ResetBossBattleFromEditor(); battleEditorDirty = false; strcpy_s(battleEditorMessage, "Loaded and restarted"); }
         else strcpy_s(battleEditorMessage, "Load failed; current values kept");
     }
     ImGui::SameLine();
@@ -224,6 +228,124 @@ static void DrawBossBattleEditor() {
     }
     ImGui::SameLine(); ImGui::TextUnformatted(battleEditorDirty ? "* Unsaved" : "Saved / unchanged");
     ImGui::TextWrapped("%s", battleEditorMessage);
+}
+// 既存のゲーム設定と画像設定を一つの画面から扱う。
+// 操作はF5:調整 / F6:画像 / F9:詳細 / F8:バランス再読込。
+static void DrawGameEditor() {
+    AssetEditor::opened = false; // プレビューは画像タブを開いている時だけ描画する
+    if (!showGameEditor) return;
+    ImGui::SetNextWindowPos(ImVec2(12, 18), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(610, 685), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("ゲーム調整エディター###UnifiedGameEditor", &showGameEditor)) {
+        ImGui::End(); return;
+    }
+    ImGui::TextUnformatted("F5 最終調整   /   F6 画像・アニメ   /   F9 詳細設定");
+    ImGui::Text("ステージ%d  ボスHP %d / %d  プレイヤーHP %d / %d",
+        int(currentStage), boss.GetHp(), boss.GetMaxHp(),
+        arena.GetPlayer().GetHp(), arena.GetPlayer().GetMaxHp());
+
+    // 「まとめて保存」は画像・アニメとボス設定の両方を記録する。
+    // 失敗時は失敗を明示し、保存できたと偽らない。
+    if (ImGui::Button("まとめて保存")) {
+        const bool assetOk = AssetEditor::Save();
+        const bool bossOk = liveBattleConfig.Valid() &&
+            liveBattleConfig.Save(AssetEditor::BossSettingsPath().c_str());
+        std::snprintf(gameEditorStatus, sizeof(gameEditorStatus),
+            "保存: 画像=%s / ボス=%s", assetOk ? "OK" : "失敗", bossOk ? "OK" : "失敗");
+        if (bossOk) { battleEditorDirty = false; FinalTuningEditor::dirty = false; }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("保存設定を再読込")) {
+        AssetEditor::Initialize();
+        BossBattleSettings loaded;
+        const bool bossOk = loaded.Load(AssetEditor::BossSettingsPath().c_str());
+        if (bossOk) { liveBattleConfig = loaded; ResetStageBattle(currentStage); }
+        std::snprintf(gameEditorStatus, sizeof(gameEditorStatus),
+            "再読込: 画像 %s / ボス %s", AssetEditor::status,
+            bossOk ? "OK（戦闘を再開始）" : "保存設定なし／失敗");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("戦闘をやり直す")) {
+        if (liveBattleConfig.Valid()) ResetStageBattle(currentStage);
+    }
+    ImGui::TextWrapped("%s", gameEditorStatus);
+    if (!liveBattleConfig.Valid())
+        ImGui::TextColored(ImVec4(1, .4f, .4f, 1), "ボスの設定値が無効です。保存前に修正してください。");
+    ImGui::Separator();
+
+    if (ImGui::BeginTabBar("GameEditTabs")) {
+        const ImGuiTabItemFlags tab0 = editorRequestedTab == 0 ? ImGuiTabItemFlags_SetSelected : 0;
+        const ImGuiTabItemFlags tab1 = editorRequestedTab == 1 ? ImGuiTabItemFlags_SetSelected : 0;
+        const ImGuiTabItemFlags tab2 = editorRequestedTab == 2 ? ImGuiTabItemFlags_SetSelected : 0;
+        const ImGuiTabItemFlags tab3 = editorRequestedTab == 3 ? ImGuiTabItemFlags_SetSelected : 0;
+        // フォーカスしたいタブは一回だけ要求する（次フレームのタブ戻りを防ぐ）。
+        editorRequestedTab = -1;
+        if (ImGui::BeginTabItem("最終調整", nullptr, tab0)) {
+            ImGui::BeginChild("##TuningArea", ImVec2(0, 0), false);
+            const FinalTuningEditor::Actions action = FinalTuningEditor::DrawContents(
+                liveBattleConfig, boss.GetHp(), arena.GetPlayer().GetHp(), currentStage == StageId::Coaster);
+            if (action.reset) { liveBattleConfig = BossBattleSettings{}; FinalTuningEditor::dirty = true; }
+            if (action.reload) {
+                BossBattleSettings loaded;
+                if (loaded.Load(AssetEditor::BossSettingsPath().c_str())) {
+                    liveBattleConfig = loaded; ResetStageBattle(currentStage);
+                    FinalTuningEditor::dirty = false;
+                }
+            }
+            if (liveBattleConfig.Valid()) {
+                if (action.apply || action.save || action.restart) {
+                    boss.SetBattleSettings(liveBattleConfig);
+                    arena.SetBattleSettings(liveBattleConfig);
+                    arena.GetPlayer().SetMaxHp(liveBattleConfig.playerMaxHp);
+                }
+                if (action.save) {
+                    const bool ok = liveBattleConfig.Save(AssetEditor::BossSettingsPath().c_str());
+                    if (ok) FinalTuningEditor::dirty = false;
+                    std::snprintf(gameEditorStatus, sizeof(gameEditorStatus), "ボス設定の保存: %s", ok ? "OK" : "失敗");
+                }
+                if (action.restart) ResetStageBattle(currentStage);
+                if (action.stage1) ResetStageBattle(StageId::Copter);
+                if (action.stage2) ResetStageBattle(StageId::Coaster);
+                if (action.testAttack >= 0 && action.testAttack < 5) {
+                    const BossAttack attack[] = { BossAttack::Rush, BossAttack::Press,
+                        BossAttack::Shot, BossAttack::Top, BossAttack::YoYo };
+                    boss.TriggerAttackForEditor(attack[action.testAttack]);
+                }
+            }
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("画像・アニメ", nullptr, tab1)) {
+            AssetEditor::opened = true;
+            ImGui::BeginChild("##ImageArea", ImVec2(0, 0), false);
+            AssetEditor::DrawPanel();
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("詳細ボス設定", nullptr, tab2)) {
+            ImGui::BeginChild("##BossAdvanced", ImVec2(0, 0), false);
+            DrawBossBattleEditorContents();
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("デバッグ・保存先", nullptr, tab3)) {
+            ImGui::TextUnformatted("リソースを再起動後にも維持するには「まとめて保存」を押します。");
+            ImGui::TextWrapped("画像: %s", AssetEditor::settingsFile.c_str());
+            ImGui::TextWrapped("ボス: %s", AssetEditor::BossSettingsPath().c_str());
+            ImGui::TextWrapped("直近の読み込み: %s", AssetEditor::status);
+            ImGui::Separator();
+            ImGui::Checkbox("ステージ表示", &creatorRuntime.showStage);
+            ImGui::Checkbox("当たり判定表示", &creatorRuntime.showCollision);
+            ImGui::Checkbox("UI表示", &creatorRuntime.showCreatorUI);
+            ImGui::Checkbox("エフェクト表示", &creatorRuntime.showEffects);
+            ImGui::Checkbox("アニメ確認", &creatorRuntime.showAnimation);
+            ImGui::Checkbox("ギミック表示", &creatorRuntime.showGimmicks);
+            if (ImGui::Button("ステージデータを再読込")) creatorRuntime.Reload();
+            ImGui::TextUnformatted("※ F8はボス設定とステージデータを再読込します。");
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
     ImGui::End();
 }
 #endif
@@ -237,7 +359,7 @@ static void DrawBossBattleEditor() {
 void InitStage(void) {
     // 設定ファイルが無い場合は前回正常に読めた値／初期値で続行。
     // 【注目】【設定読込】エディターの設定が無い場合は既定値を使う。
-    liveBattleConfig.Load();
+    liveBattleConfig.Load(AssetEditor::BossSettingsPath().c_str());
     creatorRuntime.Reload();
     ResetStageBattle(StageId::Copter);
 }
@@ -252,9 +374,14 @@ void UpdateStage(void) {
     // キー押しっぱなしによる連続リロードを防ぐためエッジ判定。
     char liveKeys[256] = {};Novice::GetHitKeyStateAll(liveKeys);
 #ifdef USE_IMGUI
-    // F9でエディターを閉じたり、再び表示したりできる。
+    const bool f5Now = liveKeys[DIK_F5] != 0;
+    if (f5Now && !f5Prev) { showGameEditor = !showGameEditor; editorRequestedTab = 0; }
+    f5Prev = f5Now;
+    const bool f6Now = liveKeys[DIK_F6] != 0;
+    if (f6Now && !f6Prev) { showGameEditor = true; editorRequestedTab = 1; }
+    f6Prev = f6Now;
     const bool f9Now = liveKeys[DIK_F9] != 0;
-    if (f9Now && !f9Prev) showBattleEditor = !showBattleEditor;
+    if (f9Now && !f9Prev) { showGameEditor = true; editorRequestedTab = 2; }
     f9Prev = f9Now;
 #endif
     const bool f7Now = liveKeys[DIK_F7] != 0;
@@ -270,7 +397,7 @@ void UpdateStage(void) {
     const bool f8Now = liveKeys[DIK_F8] != 0;
     if (f8Now && !f8Prev) {
         BossBattleSettings next;
-        if (next.Load()) { liveBattleConfig = next; creatorRuntime.Reload(); ResetStageBattle(currentStage); reloadIndicatorFrames = 120; }
+        if (next.Load(AssetEditor::BossSettingsPath().c_str())) { liveBattleConfig = next; creatorRuntime.Reload(); ResetStageBattle(currentStage); reloadIndicatorFrames = 120; }
         else reloadIndicatorFrames = -120;
     }
     f8Prev = f8Now;
@@ -317,7 +444,10 @@ void UpdateStage(void) {
             removed = boss.TryPeelArmor(peelRequest);
         else
             removed = boss.TryPeelAccessory(peelRequest - BossStage1::kArmorPlates);
-        if (removed) player.OnArmorPeeled();
+        if (removed) {
+            arena.NotifyArmorPeeled(peelRequest);
+            player.OnArmorPeeled();
+        }
     }
     SetCameraFollowY(360.0f); // プレイヤーのジャンプ/ワイヤーでカメラが上に行かない
     if (player.IsDefeated() || stageCleared) return;
@@ -336,9 +466,8 @@ void UpdateStage(void) {
         boss.Update();
         if (boss.IsCoasterStage()) {
             arena.UpdateStage2(boss.GetPosition(), boss.GetHp(), boss.GetMaxHp());
-            if (arena.Stage2CounterReady() && (boss.GetState() == BossState::Idle || boss.IsDizzy())) {
-                if (boss.TakeDamage(30, true, false, true)) arena.ConsumeStage2Counter();
-            }
+            // No automatic counter damage: stage 2 now shares the
+            // same loosen -> two-arm peel progression as stage 1.
         }
         // Update中に墜落→連打へ切り替わるので、カメラ状態を毎フレーム更新。
         SetBossMashCamera(boss.IsMashActive(), boss.GetPosition().x, boss.GetPosition().y);
@@ -505,7 +634,7 @@ void DrawStage(void) {
     Novice::ScreenPrintf(18, 189, "AI attack: %s, cycle: %d", attack, boss.GetAttackCount());
 #endif
 #ifdef USE_IMGUI
-    DrawBossBattleEditor();
+    DrawGameEditor();
 #endif
 }
 // ------------------------------------------------------------------------

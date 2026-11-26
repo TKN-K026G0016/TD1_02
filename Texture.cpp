@@ -1,3 +1,4 @@
+#include "AssetEditor.h"
 #include "Texture.h"
 #include "Timer.h"
 #include "Tool.h"
@@ -34,10 +35,10 @@ void InitTexture(void) {
 		{ Novice::LoadTexture("./resources/texture/player/player_arm.png"), { 64, 64 }, {0}, 0, 0, WHITE },
 
 		//Enemy
-		{ Novice::LoadTexture("./resources/texture/boss/form1/boss_body.png"), { 256, 256 }, {0}, 0, 0, WHITE },
+		{ AssetEditor::Handle(AssetEditor::BossBody), { 256, 256 }, {0}, 0, 0, WHITE },
 
 		//MapChip
-		{ Novice::LoadTexture("./resources/texture/stage/mapchip.png"), { 32, 32 }, {0}, 0, 0, WHITE },
+		{ AssetEditor::Handle(AssetEditor::MapChip), { 32, 32 }, {0}, 0, 0, WHITE },
 
 		//background
 		{ Novice::LoadTexture("./resources/texture/stage/form1/background.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
@@ -60,7 +61,10 @@ void InitTexture(void) {
 
 
 Texture GetTexture(TextureType type) {
-	return textures[ToInt(type)];
+	Texture result = textures[ToInt(type)];
+	if (type == TextureType::BossForm1Body) result.tHandle = AssetEditor::Handle(AssetEditor::BossBody);
+	if (type == TextureType::SampleMapChip) result.tHandle = AssetEditor::Handle(AssetEditor::MapChip);
+	return result;
 }
 
 
@@ -143,12 +147,12 @@ void DrawTextureAsUI(Texture texture, Vector2 pos, Vector2 size, float rotateThe
 	}
 
 	Novice::DrawQuad(
-	vertexS[0].x, vertexS[0].y,
-	vertexS[1].x, vertexS[1].y,
-	vertexS[2].x, vertexS[2].y,
-	vertexS[3].x, vertexS[3].y,
-	texture.refSize.x * texture.animNum, 0, texture.refSize.x, texture.refSize.y,
-	texture.tHandle, texture.color
+		vertexS[0].x, vertexS[0].y,
+		vertexS[1].x, vertexS[1].y,
+		vertexS[2].x, vertexS[2].y,
+		vertexS[3].x, vertexS[3].y,
+		texture.refSize.x * texture.animNum, 0, texture.refSize.x, texture.refSize.y,
+		texture.tHandle, texture.color
 	);
 }
 
@@ -192,7 +196,7 @@ void DrawGaugeAsObj(Texture texture, Vector2 centerPos, Vector2 size, float rate
 		vertexS[1].x, vertexS[1].y,
 		vertexS[2].x, vertexS[2].y,
 		vertexS[3].x, vertexS[3].y,
-		 texture.refSize.x * texture.animNum, 0, gaugeRefWidth, texture.refSize.y,
+		texture.refSize.x * texture.animNum, 0, gaugeRefWidth, texture.refSize.y,
 		texture.tHandle, texture.color
 	);
 }
@@ -236,7 +240,7 @@ void DrawGaugeAsUI(Texture texture, Vector2 centerPos, Vector2 size, float rate)
 		vertexS[1].x, vertexS[1].y,
 		vertexS[2].x, vertexS[2].y,
 		vertexS[3].x, vertexS[3].y,
-		 texture.refSize.x * texture.animNum, 0, gaugeRefWidth, texture.refSize.y,
+		texture.refSize.x * texture.animNum, 0, gaugeRefWidth, texture.refSize.y,
 		texture.tHandle, texture.color
 	);
 }
@@ -254,7 +258,8 @@ void UpdateAnimation(Texture& texture) {
 
 		if (texture.animNum < texture.animLimit) {
 			texture.animNum++;
-		} else {
+		}
+		else {
 			texture.animNum = 0;
 		}
 

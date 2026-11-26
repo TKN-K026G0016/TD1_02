@@ -636,10 +636,10 @@ void PortalPlayer::Draw() const {
     const Vector2 drawCenter = Add(position_, { bodyLean_ * 0.55f,bob + landingBounce_ * 3.0f });
 
     // 動画のキャラクター画像を優先して使う。サイズ64×64・横3コマ。
-    static const int idleTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_idle.png");
-    static const int walkTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_walk.png");
-    static const int jumpTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_jump.png");
-    static const int fallTexture = Novice::LoadTexture("./resources/texture/player/video_sample/player_fall.png");
+    static const int idleTexture = Novice::LoadTexture("./resources/texture/player/video_sample/playerIdle1.png");
+    static const int walkTexture = Novice::LoadTexture("./resources/texture/player/video_sample/playerIdle1.png");
+    static const int jumpTexture = Novice::LoadTexture("./resources/texture/player/video_sample/playerIdle1.png");
+    static const int fallTexture = Novice::LoadTexture("./resources/texture/player/video_sample/playerIdle1.png");
     int playerTexture = idleTexture;
     if (!grounded_) playerTexture = velocity_.y > 0.0f ? jumpTexture : fallTexture;
     else if (speed > 1.0f) playerTexture = walkTexture;
