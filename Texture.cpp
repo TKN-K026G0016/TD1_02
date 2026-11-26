@@ -41,6 +41,11 @@ void InitTexture(void) {
 		{ AssetEditor::Handle(AssetEditor::MapChip), { 32, 32 }, {0}, 0, 0, WHITE },
 
 		//background
+		{ Novice::LoadTexture("./resources/texture/stage/form1/background.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
+
+		{ Novice::LoadTexture("./resources/texture/stage/form2/background_1.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
+		{ Novice::LoadTexture("./resources/texture/stage/form2/background_2.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
+		{ Novice::LoadTexture("./resources/texture/stage/form2/background_3.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
 
 		//UI
 

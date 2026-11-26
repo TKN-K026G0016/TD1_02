@@ -46,6 +46,11 @@ enum class TextureType {
 	SampleMapChip,
 
 	//background
+	BackgroundForm1,
+
+	Background1Form2,
+	Background2Form2,
+	Background3Form2,
 
 	//UI
 

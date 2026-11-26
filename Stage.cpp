@@ -7,6 +7,7 @@
 // ============================================================================
 
 #include "Stage.h"
+#include "Texture.h"
 #include "Boss_coptar.h"
 #include "PortalArena.h"
 #include "PortalConfig.h"
@@ -1095,6 +1096,7 @@ void DrawStage(void) {
     // 描画順：背景・杭 → ボス → プレイヤー・触手 → HUD。
     // ボスの後に背景を描くとボスが隠れるため、この順序を守る。
     // 【注目】【描画順①】床・背景・杭を先に描く（最も奥）。
+
     arena.DrawWorld();
     creatorRuntime.DrawWorld();
     TileMapEditor::DrawWorld(int(currentStage));
