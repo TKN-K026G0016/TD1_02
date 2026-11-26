@@ -800,3 +800,14 @@ void PortalPlayer::SyncSamplePose(Vector2 pos, Vector2 vel, bool gripping, bool 
     grounded_ = (pos.y <= 128.1f);
     if (hurtFrames_ > 0)--hurtFrames_;
 }
+
+// 【ステージエディター連携】シーン配置の床・壁にだけプレイヤーを押し戻す。
+// 通常の移動・ジャンプ・触手の挙動はUpdate内の元コードをそのまま使用。
+void PortalPlayer::ResolveStageColliders(Vector2 previousPosition,
+    const StageCollision::Rect* rects, int count) {
+    StageCollision::Resolve(previousPosition, position_, velocity_, grounded_, rects, count);
+    if (grounded_) {
+        coyoteFrames_ = PortalConfig::kCoyoteFrames;
+        sourceAirDownUsed_ = false;
+    }
+}

@@ -13,7 +13,8 @@ public:
     // エディターが配置した杭をゲームに反映する。リロード時も使用。
     void SetBattleSettings(const BossBattleSettings& settings);
     void SetCoasterStage(bool active) { coasterStage_ = active; }
-    void UpdateStage2(Vector2 bossPosition, int bossHp, int bossMaxHp);
+    void SetBossOutsideScreen(bool outside) { bossOutsideScreen_ = outside; }
+    void UpdateStage2(Vector2 bossPosition, int bossHp, int bossMaxHp, int specialMode, int specialFrame);
     int Stage2HitPlayer(Vector2 player, Vector2* source);
     bool Stage2CounterReady() const { return stage2_.CanCounter() && stage2_.Loosen() >= 100.0f; }
     bool ConsumeStage2Counter() { return stage2_.ConsumeLoosen(); }
@@ -25,6 +26,12 @@ public:
     void DrawPlayer() const; // プレイヤーと触手だけ
     void DrawHUD() const;
     const Vector2& GetPlayerPosition() const { return player_.GetPosition(); }
+    void TestStage2Missile() { stage2_.TestMissile(); }
+    void TestStage2Cutter() { stage2_.TestCutter(); }
+    int MostLooseScrew(float* loosenValue = nullptr) const;
+    void TightenScrew(int index, float perFrame);
+    Vector2 GetScrewWorldPosition(int index) const;
+    bool ScrewExists(int index) const;
     PortalPlayer& GetPlayer() { return player_; }
     // 【連打】右スティックの弾き直し/キーボードJの押し直しをそのまま流用。
     bool ConsumeMashPulse() { const bool b = mashPulse_; mashPulse_ = false; return b; }
@@ -46,6 +53,7 @@ private:
     // 地上から届きやすい左寄りと、連続グラップルしやすい右寄りに配置。
     Vector2 anchors_[kMaxAnchors] = { {155,320},{450,530},{780,360},{1090,530},{270,590},{1180,300} };
     bool coasterStage_ = false;
+    bool bossOutsideScreen_ = false;
     bool connected_ = false;
     bool mashPulse_ = false;
     bool armorPointEnabled_[BossBattleSettings::kArmorHooks] = {};
@@ -53,6 +61,14 @@ private:
     bool extraPointEnabled_[kExtraBossPoints] = {};
     Vector2 extraPoints_[kExtraBossPoints] = {};
     int frame_ = 0;
+    int lastFailedYankFrame_ = -1000;
+    // 第2ステージの流れる背景GP：引き抜かれたものは600F後に再出現。
+    // ボスのネジGPはこの配列で管理しない。
+    int movingGpRespawnAt_[kMaxAnchors] = {};
+    bool MovingGpAvailable(int index) const {
+        return !coasterStage_ || index < 0 || index >= kMaxAnchors ||
+            frame_ >= movingGpRespawnAt_[index];
+    }
     Stage2Gimmicks stage2_;
     ArmorTensionSystem armorTension_;
 };

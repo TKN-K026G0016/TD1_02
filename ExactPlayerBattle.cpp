@@ -6,7 +6,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ExactPlayerBattle.h"
+#include "PlayerTuning.h"
 #include "Vector2.h"
+#include "BossCombatEditorSettings.h"
+
+// ボスが画面外へ退場したフレームに、ボスGPとの接続だけを解除する。
+// 通常の背景GPと、プレイヤーの移動・ジャンプ計算には触れない。
+namespace ExactPlayerBattle {
+	static bool releaseBossGripsRequested = false;
+	static int movingAnchorCount = 0;
+}
 
 namespace ExactSampleNonAlternateBattle {
 	const int kWindowWidth = 1280;
@@ -35,11 +44,6 @@ namespace ExactSampleNonAlternateBattle {
 	const int kAnimationFrameCount = 6;
 	const int kAnimationSpeed = 5;
 
-	const float kPlayerSpeed = 8.0f;
-	const float kGravity = 0.8f;
-	const float kMaxFallSpeed = 24.0f;
-	const float kJumpPower = 20.0f;
-	const float kJumpCut = 5.0f;
 
 	// 操作
 	const PadButton kPadTentL = kPadButton8;         // L2
@@ -85,13 +89,9 @@ namespace ExactSampleNonAlternateBattle {
 	const float kGripWireHalf = static_cast<float>(kGripHalfSrc * kPixelScale);   // 巻き付き部分の太さ
 	const float kGripCoilGap = 4.0f;                 // 1周ごとに増える半径(px)
 	const float kGripTurns = 1.0f;                   // 杭に巻く周数
-	const float kGripReachSpeed = 45.0f;             // 杭へ伸びる速さ(px/f)
 	const int kGripUnwindFrames = 14;                // 巻き解きにかかるフレーム数
-	const float kGripPullSpeed = 22.0f;              // 杭へ引っ張られる速さ(px/f)
-	const float kGripLaunchSpeed = 26.0f;            // 離した時に杭の向きへ飛ぶ速さ
 	const float kGripReleaseDist = 40.0f;            // 杭にこの距離まで近づいたら離す(px)
 	const int kGripPullMax = 40;                     // 引っ張りの最大フレーム数(壁に引っかかった時用)
-	const float kGripLockRange = 400.0f;             // 自動照準が届く距離(px)
 	const float kGripLockCos = 0.5f;                 // 自動照準の角度(cos。0.5で左右60度)
 	const int kGripMarkSpriteSize = 32 * kPixelScale;
 	const float kGripMarkSize = 72.0f;               // 狙い中のマークのサイズ
@@ -464,8 +464,8 @@ namespace ExactSampleNonAlternateBattle {
 				return;
 			}
 			if (us.gripPhase == kGripPull) {
-				player.Velocity.y = us.pullDir.y * kGripLaunchSpeed;
-				knockX = us.pullDir.x * kGripLaunchSpeed;
+				player.Velocity.y = us.pullDir.y * PlayerTuning::values.gripLaunchSpeed;
+				knockX = us.pullDir.x * PlayerTuning::values.gripLaunchSpeed;
 				knockTimer = kKnockHoldFrames;
 				jumpReady = true;
 			}
@@ -561,6 +561,19 @@ namespace ExactSampleNonAlternateBattle {
 			ResetStakes();
 			initialized = true;
 		}
+		// 画面外へ出たボスに接続中の触手だけ解除する。
+		if (update && ExactPlayerBattle::releaseBossGripsRequested) {
+			for (int h = 0; h < 2; ++h) {
+				if (sets[h].isActive && sets[h].state == kSetOut &&
+					sets[h].gripIdx >= ExactPlayerBattle::BossAnchorStart()) {
+					sets[h].isActive = false;
+					sets[h].gripIdx = -1;
+					sets[h].gripTense = 0.0f;
+					reelGrace[h] = 0;
+				}
+			}
+		}
+
 		if (update) {
 			snapshot.yankTarget = -1;
 			snapshot.yankGap = 0.0f;
@@ -583,11 +596,29 @@ namespace ExactSampleNonAlternateBattle {
 					stakes[i].goneFrames = 999999;
 				}
 			}
-			// Boss targets move with their aircraft; ordinary grip points preserve sample motion.
+			// 第2ステージの流れる背景GPは触手の接続位置も追従させる。
+			// 画面端でGPが反対側へループした場合、触手だけ安全に解除する。
 			for (int h = 0; h < 2; ++h) {
 				const int idx = sets[h].gripIdx;
-				if (sets[h].isActive && idx >= ExactPlayerBattle::BossAnchorStart() &&
-					idx < anchorCount && sets[h].gripPhase != kGripUnwind) {
+				if (!sets[h].isActive || idx < 0 || idx >= anchorCount ||
+					sets[h].gripPhase == kGripUnwind) continue;
+				if (idx < ExactPlayerBattle::movingAnchorCount) {
+					const Vector2 newPos = stakes[idx].pos;
+					const float dx = newPos.x - sets[h].gripPos.x;
+					const float dy = newPos.y - sets[h].gripPos.y;
+					// 一瞬で大きく座標が変わるのはGPのループか消滅。
+					if (newPos.x > 10000.0f || dx * dx + dy * dy > 200.0f * 200.0f) {
+						sets[h].isActive = false;
+						sets[h].gripIdx = -1;
+						sets[h].gripTense = 0.0f;
+						reelGrace[h] = 0;
+					}
+					else {
+						sets[h].gripPos = newPos;
+					}
+				}
+				else if (idx >= ExactPlayerBattle::BossAnchorStart()) {
+					// ボスGPは従来通り機体に追従。
 					sets[h].gripPos = stakes[idx].pos;
 				}
 			}
@@ -652,7 +683,7 @@ namespace ExactSampleNonAlternateBattle {
 				bool releasePress = (releaseHold == true && preReleaseHold == false);
 
 				// プレイヤーの移動
-				player.Velocity.x = inX * kPlayerSpeed;
+				player.Velocity.x = inX * PlayerTuning::values.moveSpeed;
 				if (inX > 0.1f) {
 					player.isFacingRight = true;
 				}
@@ -664,7 +695,7 @@ namespace ExactSampleNonAlternateBattle {
 				if (knockX != 0.0f) {
 					float inputX = player.Velocity.x;
 					if (inputX * knockX < 0.0f) {
-						float strength = fabsf(knockX) / kGripLaunchSpeed;   // 離した直後は1.0、反動が終わる頃は0.0
+						float strength = fabsf(knockX) / PlayerTuning::values.gripLaunchSpeed;   // 離した直後は1.0、反動が終わる頃は0.0
 						if (strength > 1.0f) {
 							strength = 1.0f;
 						}
@@ -697,12 +728,12 @@ namespace ExactSampleNonAlternateBattle {
 
 				// ジャンプ
 				if (jumpPress == true && jumpReady == true) {
-					player.Velocity.y = -kJumpPower;
+					player.Velocity.y = -PlayerTuning::values.jumpPower;
 					jumpReady = false;
 				}
 				if (jumpHold == false && preJumpHold == true) {
-					if (player.Velocity.y < -kJumpCut) {
-						player.Velocity.y = -kJumpCut;
+					if (player.Velocity.y < -PlayerTuning::values.jumpCut) {
+						player.Velocity.y = -PlayerTuning::values.jumpCut;
 					}
 				}
 
@@ -754,7 +785,11 @@ namespace ExactSampleNonAlternateBattle {
 						float vx = stakes[i].pos.x - player.pos.x;
 						float vy = stakes[i].pos.y - player.pos.y;
 						float dist = sqrtf(vx * vx + vy * vy);
-						if (dist > kGripLockRange || dist < 40.0f) {
+						// 背景GPは従来の照準判定を維持し、ボスGPだけアシストする。
+						const bool bossGp = (i >= ExactPlayerBattle::BossAnchorStart());
+						const float baseRange = PlayerTuning::values.lockRange;
+						const float lockRange = baseRange * (bossGp ? BossCombatEditor::values.bossGripRangeMultiplier : 1.0f);
+						if (dist > lockRange || dist < 40.0f) {
 							continue;
 						}
 						if (candCount < kMaxGripCand) {
@@ -762,9 +797,11 @@ namespace ExactSampleNonAlternateBattle {
 							candCount++;
 						}
 						float cosA = (vx * adx + vy * ady) / dist;
-						if (cosA >= lockCos) {
+						const float targetCos = bossGp && hasAimDir ? BossCombatEditor::values.bossGripAimCos : lockCos;
+						if (cosA >= targetCos) {
 							// 近いほど、向きが合うほど優先
 							float score = dist + (1.0f - cosA) * 400.0f;
+							if (bossGp) score -= BossCombatEditor::values.bossGripPriorityBonus;
 							if (score < bestScore) {
 								bestScore = score;
 								isLock = true;
@@ -919,9 +956,9 @@ namespace ExactSampleNonAlternateBattle {
 				}
 
 				// プレイヤー(重力)
-				player.Velocity.y += kGravity;
-				if (player.Velocity.y > kMaxFallSpeed) {
-					player.Velocity.y = kMaxFallSpeed;
+				player.Velocity.y += PlayerTuning::values.gravity;
+				if (player.Velocity.y > PlayerTuning::values.maxFallSpeed) {
+					player.Velocity.y = PlayerTuning::values.maxFallSpeed;
 				}
 
 				// 引っ張り中は重力もキー入力も無視して杭へ一直線(2本とも引いてるなら向きを平均)
@@ -957,8 +994,8 @@ namespace ExactSampleNonAlternateBattle {
 				if (pullCount > 0) {
 					pullSumX /= pullCount;
 					pullSumY /= pullCount;
-					player.Velocity.x = pullSumX * kGripPullSpeed;
-					player.Velocity.y = pullSumY * kGripPullSpeed;
+					player.Velocity.x = pullSumX * PlayerTuning::values.gripPullSpeed;
+					player.Velocity.y = pullSumY * PlayerTuning::values.gripPullSpeed;
 					knockX = 0.0f;
 					knockTimer = 0;
 					if (pullSumX > 0.1f) {
@@ -1117,7 +1154,7 @@ namespace ExactSampleNonAlternateBattle {
 						Tentacle& gt = ts.t;   // 杭に巻き付く触手
 						if (ts.gripPhase == kGripReach) {
 							// 杭の接点までまっすぐ伸びる
-							gt.len += kGripReachSpeed;
+							gt.len += PlayerTuning::values.gripReachSpeed;
 							if (gt.len >= gp.legLen) {
 								gt.len = gp.legLen;
 								// ボタン押しっぱなしなら引っ張る。離してたらロープでつながる
@@ -1188,8 +1225,8 @@ namespace ExactSampleNonAlternateBattle {
 											SpawnPeel(ts.gripPos.x, ts.gripPos.y, static_cast<float>(rand() % 5 - 2), -5.0f);
 											RemoveStake(ts.gripIdx);
 											AddPopup(ts.gripPos.x, ts.gripPos.y, 2);
-											player.Velocity.y = ts.pullDir.y * kGripLaunchSpeed;
-											knockX = ts.pullDir.x * kGripLaunchSpeed;
+											player.Velocity.y = ts.pullDir.y * PlayerTuning::values.gripLaunchSpeed;
+											knockX = ts.pullDir.x * PlayerTuning::values.gripLaunchSpeed;
 											knockTimer = kKnockHoldFrames;
 											jumpReady = true;
 											ts.gripPhase = kGripUnwind;
@@ -1203,15 +1240,15 @@ namespace ExactSampleNonAlternateBattle {
 								// もう外れた
 							}
 							else if (tentHold[s] == false || ts.gripTimer >= kGripPullMax) {
-								player.Velocity.y = ts.pullDir.y * kGripPullSpeed;
-								knockX = ts.pullDir.x * kGripPullSpeed;
+								player.Velocity.y = ts.pullDir.y * PlayerTuning::values.gripPullSpeed;
+								knockX = ts.pullDir.x * PlayerTuning::values.gripPullSpeed;
 								knockTimer = kKnockHoldFrames;
 								ts.ropeLen = pullDist;
 								ts.gripPhase = kGripHold;
 							}
 							else if (pullDist < kGripReleaseDist) {
-								player.Velocity.y = ts.pullDir.y * kGripLaunchSpeed;
-								knockX = ts.pullDir.x * kGripLaunchSpeed;
+								player.Velocity.y = ts.pullDir.y * PlayerTuning::values.gripLaunchSpeed;
+								knockX = ts.pullDir.x * PlayerTuning::values.gripLaunchSpeed;
 								knockTimer = kKnockHoldFrames;
 								jumpReady = true;
 								ts.gripPhase = kGripUnwind;
@@ -1749,7 +1786,8 @@ namespace ExactSampleNonAlternateBattle {
 				// 1コマ64x64pxの画像は、ゲーム画面でも64x64pxで表示する。
 				// kPlayerW/Hは物理・当たり判定用のため変更しない。
 				{
-					constexpr float kPlayerDrawScale = 1.0f; // 描画倍率：等倍
+					const float kPlayerDrawScale = AssetEditor::Scale(
+						AssetEditor::PlayerSlotForHandle(playerTex)); // ImGuiの表示倍率（物理には影響しない）
 					const AssetEditor::FrameSource frameSource = AssetEditor::GetFrame(
 						AssetEditor::PlayerSlotForHandle(playerTex), animationFrame);
 					if (playerTex >= 0) {
@@ -1993,11 +2031,6 @@ namespace ExactSampleAlternateBattle {
 	const int kAnimationFrameCount = 6;
 	const int kAnimationSpeed = 5;
 
-	const float kPlayerSpeed = 8.0f;
-	const float kGravity = 0.8f;
-	const float kMaxFallSpeed = 24.0f;
-	const float kJumpPower = 20.0f;
-	const float kJumpCut = 5.0f;
 
 	// 操作
 	const PadButton kPadTentL = kPadButton8;         // L2
@@ -2043,17 +2076,13 @@ namespace ExactSampleAlternateBattle {
 	const float kGripWireHalf = static_cast<float>(kGripHalfSrc * kPixelScale);   // 巻き付き部分の太さ
 	const float kGripCoilGap = 4.0f;                 // 1周ごとに増える半径(px)
 	const float kGripTurns = 1.0f;                   // 杭に巻く周数
-	const float kGripReachSpeed = 45.0f;             // 杭へ伸びる速さ(px/f)
 	const int kGripUnwindFrames = 14;                // 巻き解きにかかるフレーム数
-	const float kGripPullSpeed = 22.0f;              // 杭へ引っ張られる速さ(px/f)
-	const float kGripLaunchSpeed = 26.0f;            // 離した時に杭の向きへ飛ぶ速さ
 	const float kGripThroughSpeed = 15.0f;           // 巻き取り切って杭の向こう側へ跳ぶ速さ(大きいほど遠くまで抜ける)
 	const float kGripReleaseDist = 40.0f;            // 杭にこの距離まで近づいたら巻き取り終わり(px)
 	const int kGripPayoutFrames = 48;                // 巻き取り切って向こうへ跳んでる間、触手を離さず飛ぶ向きへ伸ばし続けるフレーム数
 	const float kGripReturnSpeed = 3.0f;             // 向こうへ跳んでる間、杭から遠ざかる速さがこれを下回ったらすぐ巻き戻す(px/f)
 	const float kGripPayoutMax = 300.0f;             // 触手(ロープ)がここまで伸びたらそれ以上伸びない(ここから先はピンと張る)
 	const int kGripPullMax = 40;                     // 引っ張りの最大フレーム数(壁に引っかかった時用)
-	const float kGripLockRange = 400.0f;             // 自動照準が届く距離(px)
 	const float kGripLockCos = 0.5f;                 // 自動照準の角度(cos。0.5で左右60度)
 	const int kGripMarkSpriteSize = 32 * kPixelScale;
 	const float kGripMarkSize = 72.0f;               // 狙い中のマークのサイズ
@@ -2426,8 +2455,8 @@ namespace ExactSampleAlternateBattle {
 				return;
 			}
 			if (us.gripPhase == kGripPull) {
-				player.Velocity.y = us.pullDir.y * kGripLaunchSpeed;
-				knockX = us.pullDir.x * kGripLaunchSpeed;
+				player.Velocity.y = us.pullDir.y * PlayerTuning::values.gripLaunchSpeed;
+				knockX = us.pullDir.x * PlayerTuning::values.gripLaunchSpeed;
 				knockTimer = kKnockHoldFrames;
 				jumpReady = true;
 			}
@@ -2523,6 +2552,19 @@ namespace ExactSampleAlternateBattle {
 			ResetStakes();
 			initialized = true;
 		}
+		// 画面外へ出たボスに接続中の触手だけ解除する。
+		if (update && ExactPlayerBattle::releaseBossGripsRequested) {
+			for (int h = 0; h < 2; ++h) {
+				if (sets[h].isActive && sets[h].state == kSetOut &&
+					sets[h].gripIdx >= ExactPlayerBattle::BossAnchorStart()) {
+					sets[h].isActive = false;
+					sets[h].gripIdx = -1;
+					sets[h].gripTense = 0.0f;
+					reelGrace[h] = 0;
+				}
+			}
+		}
+
 		if (update) {
 			snapshot.yankTarget = -1;
 			snapshot.yankGap = 0.0f;
@@ -2545,11 +2587,29 @@ namespace ExactSampleAlternateBattle {
 					stakes[i].goneFrames = 999999;
 				}
 			}
-			// Boss targets move with their aircraft; ordinary grip points preserve sample motion.
+			// 第2ステージの流れる背景GPは触手の接続位置も追従させる。
+			// 画面端でGPが反対側へループした場合、触手だけ安全に解除する。
 			for (int h = 0; h < 2; ++h) {
 				const int idx = sets[h].gripIdx;
-				if (sets[h].isActive && idx >= ExactPlayerBattle::BossAnchorStart() &&
-					idx < anchorCount && sets[h].gripPhase != kGripUnwind) {
+				if (!sets[h].isActive || idx < 0 || idx >= anchorCount ||
+					sets[h].gripPhase == kGripUnwind) continue;
+				if (idx < ExactPlayerBattle::movingAnchorCount) {
+					const Vector2 newPos = stakes[idx].pos;
+					const float dx = newPos.x - sets[h].gripPos.x;
+					const float dy = newPos.y - sets[h].gripPos.y;
+					// 一瞬で大きく座標が変わるのはGPのループか消滅。
+					if (newPos.x > 10000.0f || dx * dx + dy * dy > 200.0f * 200.0f) {
+						sets[h].isActive = false;
+						sets[h].gripIdx = -1;
+						sets[h].gripTense = 0.0f;
+						reelGrace[h] = 0;
+					}
+					else {
+						sets[h].gripPos = newPos;
+					}
+				}
+				else if (idx >= ExactPlayerBattle::BossAnchorStart()) {
+					// ボスGPは従来通り機体に追従。
 					sets[h].gripPos = stakes[idx].pos;
 				}
 			}
@@ -2614,7 +2674,7 @@ namespace ExactSampleAlternateBattle {
 				bool releasePress = (releaseHold == true && preReleaseHold == false);
 
 				// プレイヤーの移動
-				player.Velocity.x = inX * kPlayerSpeed;
+				player.Velocity.x = inX * PlayerTuning::values.moveSpeed;
 				if (inX > 0.1f) {
 					player.isFacingRight = true;
 				}
@@ -2634,7 +2694,7 @@ namespace ExactSampleAlternateBattle {
 				if (knockX != 0.0f) {
 					float inputX = player.Velocity.x;
 					if (inputX * knockX < 0.0f) {
-						float strength = fabsf(knockX) / kGripLaunchSpeed;   // 離した直後は1.0、反動が終わる頃は0.0
+						float strength = fabsf(knockX) / PlayerTuning::values.gripLaunchSpeed;   // 離した直後は1.0、反動が終わる頃は0.0
 						if (strength > 1.0f) {
 							strength = 1.0f;
 						}
@@ -2667,12 +2727,12 @@ namespace ExactSampleAlternateBattle {
 
 				// ジャンプ
 				if (jumpPress == true && jumpReady == true) {
-					player.Velocity.y = -kJumpPower;
+					player.Velocity.y = -PlayerTuning::values.jumpPower;
 					jumpReady = false;
 				}
 				if (jumpHold == false && preJumpHold == true) {
-					if (player.Velocity.y < -kJumpCut) {
-						player.Velocity.y = -kJumpCut;
+					if (player.Velocity.y < -PlayerTuning::values.jumpCut) {
+						player.Velocity.y = -PlayerTuning::values.jumpCut;
 					}
 				}
 
@@ -2724,7 +2784,11 @@ namespace ExactSampleAlternateBattle {
 						float vx = stakes[i].pos.x - player.pos.x;
 						float vy = stakes[i].pos.y - player.pos.y;
 						float dist = sqrtf(vx * vx + vy * vy);
-						if (dist > kGripLockRange || dist < 40.0f) {
+						// 背景GPは従来の照準判定を維持し、ボスGPだけアシストする。
+						const bool bossGp = (i >= ExactPlayerBattle::BossAnchorStart());
+						const float baseRange = PlayerTuning::values.lockRange;
+						const float lockRange = baseRange * (bossGp ? BossCombatEditor::values.bossGripRangeMultiplier : 1.0f);
+						if (dist > lockRange || dist < 40.0f) {
 							continue;
 						}
 						if (candCount < kMaxGripCand) {
@@ -2732,9 +2796,11 @@ namespace ExactSampleAlternateBattle {
 							candCount++;
 						}
 						float cosA = (vx * adx + vy * ady) / dist;
-						if (cosA >= lockCos) {
+						const float targetCos = bossGp && hasAimDir ? BossCombatEditor::values.bossGripAimCos : lockCos;
+						if (cosA >= targetCos) {
 							// 近いほど、向きが合うほど優先
 							float score = dist + (1.0f - cosA) * 400.0f;
+							if (bossGp) score -= BossCombatEditor::values.bossGripPriorityBonus;
 							if (score < bestScore) {
 								bestScore = score;
 								isLock = true;
@@ -2890,9 +2956,9 @@ namespace ExactSampleAlternateBattle {
 				}
 
 				// プレイヤー(重力)
-				player.Velocity.y += kGravity;
-				if (player.Velocity.y > kMaxFallSpeed) {
-					player.Velocity.y = kMaxFallSpeed;
+				player.Velocity.y += PlayerTuning::values.gravity;
+				if (player.Velocity.y > PlayerTuning::values.maxFallSpeed) {
+					player.Velocity.y = PlayerTuning::values.maxFallSpeed;
 				}
 
 				// 引っ張り中は重力もキー入力も無視して杭へ一直線(2本とも引いてるなら向きを平均)
@@ -2928,8 +2994,8 @@ namespace ExactSampleAlternateBattle {
 				if (pullCount > 0) {
 					pullSumX /= pullCount;
 					pullSumY /= pullCount;
-					player.Velocity.x = pullSumX * kGripPullSpeed;
-					player.Velocity.y = pullSumY * kGripPullSpeed;
+					player.Velocity.x = pullSumX * PlayerTuning::values.gripPullSpeed;
+					player.Velocity.y = pullSumY * PlayerTuning::values.gripPullSpeed;
 					knockX = 0.0f;
 					knockTimer = 0;
 					if (pullSumX > 0.1f) {
@@ -3100,7 +3166,7 @@ namespace ExactSampleAlternateBattle {
 						Tentacle& gt = ts.t;   // 杭に巻き付く触手
 						if (ts.gripPhase == kGripReach) {
 							// 杭の接点までまっすぐ伸びる
-							gt.len += kGripReachSpeed;
+							gt.len += PlayerTuning::values.gripReachSpeed;
 							if (gt.len >= gp.legLen) {
 								gt.len = gp.legLen;
 								// ボタン押しっぱなしなら引っ張る。離してたらロープでつながる
@@ -3188,8 +3254,8 @@ namespace ExactSampleAlternateBattle {
 											SpawnPeel(ts.gripPos.x, ts.gripPos.y, static_cast<float>(rand() % 5 - 2), -5.0f);
 											RemoveStake(ts.gripIdx);
 											AddPopup(ts.gripPos.x, ts.gripPos.y, 2);
-											player.Velocity.y = ts.pullDir.y * kGripLaunchSpeed;
-											knockX = ts.pullDir.x * kGripLaunchSpeed;
+											player.Velocity.y = ts.pullDir.y * PlayerTuning::values.gripLaunchSpeed;
+											knockX = ts.pullDir.x * PlayerTuning::values.gripLaunchSpeed;
 											knockTimer = kKnockHoldFrames;
 											jumpReady = true;
 											ts.gripPhase = kGripUnwind;
@@ -3203,8 +3269,8 @@ namespace ExactSampleAlternateBattle {
 								// もう外れた
 							}
 							else if (tentHold[s] == false || ts.gripTimer >= kGripPullMax) {
-								player.Velocity.y = ts.pullDir.y * kGripPullSpeed;
-								knockX = ts.pullDir.x * kGripPullSpeed;
+								player.Velocity.y = ts.pullDir.y * PlayerTuning::values.gripPullSpeed;
+								knockX = ts.pullDir.x * PlayerTuning::values.gripPullSpeed;
 								knockTimer = kKnockHoldFrames;
 								ts.ropeLen = pullDist;
 								ts.gripTimer = 0;
@@ -3753,7 +3819,8 @@ namespace ExactSampleAlternateBattle {
 				// 1コマ64x64pxの画像は、ゲーム画面でも64x64pxで表示する。
 				// kPlayerW/Hは物理・当たり判定用のため変更しない。
 				{
-					constexpr float kPlayerDrawScale = 1.0f; // 描画倍率：等倍
+					const float kPlayerDrawScale = AssetEditor::Scale(
+						AssetEditor::PlayerSlotForHandle(playerTex)); // ImGuiの表示倍率（物理には影響しない）
 					const AssetEditor::FrameSource frameSource = AssetEditor::GetFrame(
 						AssetEditor::PlayerSlotForHandle(playerTex), animationFrame);
 					if (playerTex >= 0) {
@@ -3978,7 +4045,9 @@ namespace ExactPlayerBattle {
 	static bool pendingReset = true;
 	static Snapshot current = {};
 	static int bossAnchorStart = 24;
+	void RequestReleaseBossGrips() { releaseBossGripsRequested = true; }
 	void SetBossAnchorStart(int index) { bossAnchorStart = index; }
+	void SetMovingAnchorCount(int count) { movingAnchorCount = count > 0 ? count : 0; }
 	int BossAnchorStart() { return bossAnchorStart; }
 	void Reset() { pendingReset = true; current = {}; }
 	void SetAlternate(bool value) { if (alternate != value) { alternate = value; pendingReset = true; } }
@@ -3986,6 +4055,7 @@ namespace ExactPlayerBattle {
 	void Update(const ::Vector2* anchors, int count) {
 		if (alternate) ExactSampleAlternateBattle::Frame(true, false, pendingReset, anchors, count, current);
 		else ExactSampleNonAlternateBattle::Frame(true, false, pendingReset, anchors, count, current);
+		releaseBossGripsRequested = false;
 		pendingReset = false;
 	}
 	void Draw() {

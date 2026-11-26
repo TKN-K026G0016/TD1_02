@@ -218,6 +218,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="AssetEditor.h" />
     <ClInclude Include="Bgm.h" />
     <ClInclude Include="BossBattleSettings.h" />
+    <ClInclude Include="BossCombatEditorSettings.h" />
+    <ClInclude Include="BossPartsEditor.h" />
     <ClInclude Include="BossStage1Tuning.h" />
     <ClInclude Include="BossVisualEffect.h" />
     <ClInclude Include="Boss_coptar.h" />
@@ -248,6 +250,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="C:\KamataEngine\DirectXGame\scene\GameScene.h" />
     <ClInclude Include="C:\KamataEngine\Adapter\Novice.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="CameraBackgroundTuning.h" />
     <ClInclude Include="Common.h" />
     <ClInclude Include="CreatorGameRuntime.h" />
     <ClInclude Include="CreatorRuntimeData.h" />
@@ -257,12 +260,15 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="ExactPlayerBattle.h" />
     <ClInclude Include="ExactPlayerSample.h" />
     <ClInclude Include="FinalTuningEditor.h" />
+    <ClInclude Include="GameHudEditor.h" />
     <ClInclude Include="Input.h" />
     <ClInclude Include="Map.h" />
     <ClInclude Include="Matrix.h" />
+    <ClInclude Include="MiniUnityEditor.h" />
     <ClInclude Include="MovingPlatform.h" />
     <ClInclude Include="Pause.h" />
     <ClInclude Include="Play.h" />
+    <ClInclude Include="PlayerTuning.h" />
     <ClInclude Include="PortalConfig.h" />
     <ClInclude Include="PortalDraw.h" />
     <ClInclude Include="PortalInput.h" />
@@ -275,7 +281,10 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Se.h" />
     <ClInclude Include="Stage.h" />
     <ClInclude Include="Stage2Gimmicks.h" />
+    <ClInclude Include="Stage2Tuning.h" />
+    <ClInclude Include="StageCollision.h" />
     <ClInclude Include="Texture.h" />
+    <ClInclude Include="TileMapEditor.h" />
     <ClInclude Include="Timer.h" />
     <ClInclude Include="Time_Data.h" />
     <ClInclude Include="Title.h" />
