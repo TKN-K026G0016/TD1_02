@@ -15,9 +15,9 @@ core 0 0 85
 rush 22 1.89999998 37 78
 shot 9 30
 press 42 2.20000005 42 47
-top 25 120
-topPhysics 1.45000005 5 0.0549999997 80 720
-yoyo 490 98 34
+top 14.2399998 120
+topPhysics 3.8900001 5 0.0549999997 80 720
+yoyo 490 105 34
 idle 30
 flight 4.0999999 5.5999999 78 55
 partGrip 0 0
@@ -30,4 +30,4 @@ extraGrip 129 25
 extraGrip 130 -73
 extraGrip 51 -115
 extraGrip 0 4
-combat 190 100 50 8 14 20 8 100
+combat 190 1000 50 8 14 20 8 0

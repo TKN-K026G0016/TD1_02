@@ -4,7 +4,9 @@
 #include "Common.h"
 #include "Matrix.h"
 #include "Tool.h"
+#include "CameraBackgroundTuning.h"
 #include <cmath>
+#include <algorithm>
 
 
 struct Camera {
@@ -42,7 +44,7 @@ Camera camera;
 /// <param name=""></param>
 static void UpdateWorldToScreenMatrix(void) {
     //ワールド行列作成
-    Matrix3x3 worldMatrix = MakeWorldMatrix({ camera.zoom, camera.zoom }, camera.rotateTheta,
+    Matrix3x3 worldMatrix = MakeWorldMatrix({ 1.0f / camera.zoom, 1.0f / camera.zoom }, camera.rotateTheta,
         { camera.pos.x + camera.shakeOffset.x, camera.pos.y + camera.shakeOffset.y });
     //ビュー行列
     Matrix3x3 viewMatrix = Inverse(worldMatrix);
@@ -75,14 +77,33 @@ void SetCameraFollowY(float playerWorldY) {
 
 void UpdateCamera(void) {
     // 座標をいきなり変えず、8%ずつ追従。描画を一切増やさず滑らかにする。
-    const float goalZoom = camera.bossMashCamera ? 1.28f : 1.0f;
-    // 【注意】通常時の描画倍率は1.0。連打中だけカメラを一時的に寄せる。
+    // カメラ設定：従来の固定モードを初期値として維持。
+    auto& t = CameraBackgroundTuning::Current();
+    const float goalZoom = camera.bossMashCamera ? 1.28f
+        : (std::max)(1.0f, t.zoom); // ステージより広い範囲を見せない
     camera.zoom += (goalZoom - camera.zoom) * 0.12f;
-    if (std::fabs(camera.zoom - goalZoom) < 0.001f)camera.zoom = goalZoom;
-    const float focusX = camera.bossMashCamera ? camera.mashFocus.x : 640.0f;
-    const float focusY = camera.bossMashCamera ? camera.mashFocus.y : camera.followTargetY;
-    camera.pos.x += (focusX - camera.pos.x) * 0.12f;
-    camera.pos.y += (focusY - camera.pos.y) * 0.12f;
+    if (std::fabs(camera.zoom - goalZoom) < 0.001f) camera.zoom = goalZoom;
+    const float wantedX = (t.follow ? CameraBackgroundTuning::targetX : 640.0f) + t.offsetX;
+    const float wantedY = (t.follow ? CameraBackgroundTuning::targetY : 360.0f) + t.offsetY;
+    const float focusX = camera.bossMashCamera ? camera.mashFocus.x
+        : CameraBackgroundTuning::Clamp(wantedX, t.minX, t.maxX);
+    const float focusY = camera.bossMashCamera ? camera.mashFocus.y
+        : CameraBackgroundTuning::Clamp(wantedY, t.minY, t.maxY);
+    const float ease = camera.bossMashCamera ? 0.12f : CameraBackgroundTuning::Clamp(t.followEase, 0.01f, 1.0f);
+    camera.pos.x += (focusX - camera.pos.x) * ease;
+    camera.pos.y += (focusY - camera.pos.y) * ease;
+    // 【ステージ外の映り込み防止】カメラの画面端がステージ境界を越えないよう制限。
+    // 画面と同じ1280x720の固定ステージでは、等倍ならカメラ中心は固定になる。
+    // 拡大中は、見える範囲に応じた分だけ追従できる。
+    const float halfViewX = camera.viewSize.x * 0.5f / camera.zoom;
+    const float halfViewY = camera.viewSize.y * 0.5f / camera.zoom;
+    const float midX = 640.0f, midY = 360.0f;
+    const float limitX = (std::max)(0.0f, midX - halfViewX);
+    const float limitY = (std::max)(0.0f, midY - halfViewY);
+    camera.pos.x = (std::max)(midX - limitX, (std::min)(midX + limitX, camera.pos.x));
+    camera.pos.y = (std::max)(midY - limitY, (std::min)(midY + limitY, camera.pos.y));
+    CameraBackgroundTuning::cameraX = camera.pos.x;
+    CameraBackgroundTuning::cameraY = camera.pos.y;
     // ボス着地や外装剥がれでは、一瞬だけ世界を拡大する。オブジェクト追加なし。
     if (camera.zoomPunchRemaining > 0) {
         // ズームは上の専用補間で制御。既存のPunch演出はシェイク優先。

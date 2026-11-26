@@ -18,7 +18,8 @@
 namespace AssetEditor {
     enum Slot {
         Background1, Background2, PlayerIdle, PlayerWalk, PlayerJump, PlayerFall,
-        Tentacle, Gate, BossBody, BossForm2, MapChip, SlotCount
+        Tentacle, Gate, BossBody, BossForm2, MapChip,
+        Custom1, Custom2, Custom3, Custom4, Stage2Missile, Stage2Cutter, SlotCount
     };
     struct Data {
         char path[512]{};
@@ -27,6 +28,7 @@ namespace AssetEditor {
         int cellW = 32, cellH = 32;
         int fps = 8, columns = 1, rows = 1;
         int frame = 0;
+        float drawScale = 1.0f; // 表示のみ。物理/当たり判定は変更しない。
         bool play = false, loop = true;
         float clock = 0;
     };
@@ -34,7 +36,10 @@ namespace AssetEditor {
     inline const char* names[SlotCount] = {
         "背景：ステージ1", "背景：ステージ2", "プレイヤー：待機", "プレイヤー：歩行",
         "プレイヤー：ジャンプ", "プレイヤー：落下", "触手", "ゲート",
-        "ボス：第1形態", "ボス：第2形態", "マップチップ"
+        "ボス：第1形態", "ボス：第2形態", "マップチップ",
+        "追加PNG 1（プレビュー用）", "追加PNG 2（プレビュー用）",
+        "追加PNG 3（プレビュー用）", "追加PNG 4（プレビュー用）",
+        "ステージ2：大型ミサイル", "ステージ2：8の字カッター"
     };
     inline const char* defaults[SlotCount] = {
         "", "", "./resources/texture/player/video_sample/playerIdle.png",
@@ -45,7 +50,8 @@ namespace AssetEditor {
         "./resources/texture/player/video_sample/gate.png",
         "./resources/texture/boss/form1/boss_body.png",
         "./resources/texture/boss/form2/boss_body.png",
-        "./resources/texture/stage/mapchip.png"
+        "./resources/texture/stage/mapchip.png", "", "", "", "",
+        "./resources/texture/boss/form2/missile_1.png", ""
     };
     inline bool opened = false; // 統合画面の画像タブでのみプレビュー
     inline int selected = PlayerIdle;
@@ -150,6 +156,7 @@ namespace AssetEditor {
         return true;
     }
     inline int Handle(Slot s) { return assets[s].handle; }
+    inline float Scale(Slot s) { return std::clamp(assets[s].drawScale, 0.10f, 5.0f); }
     // PNG差し替え後のセルサイズをゲーム描画でも利用する。
     // 物理座標やプレイヤーの移動処理には触れない。
     struct FrameSource { int x, y, w, h; };
@@ -177,11 +184,11 @@ namespace AssetEditor {
             return false;
         }
         // V2: 5個の数値とパスをタブで区切るため、パスに空白があっても読める。
-        fprintf(f, "AssetEditorV2\n");
+        fprintf(f, "AssetEditorV3\n");
         for (int i = 0; i < SlotCount; ++i) {
             const Data& a = assets[i];
-            fprintf(f, "%d\t%d\t%d\t%d\t%d\t%s\n",
-                i, a.cellW, a.cellH, a.fps, a.loop ? 1 : 0,
+            fprintf(f, "%d\t%d\t%d\t%d\t%d\t%.4f\t%s\n",
+                i, a.cellW, a.cellH, a.fps, a.loop ? 1 : 0, Scale((Slot)i),
                 a.path[0] ? a.path : "-");
         }
         const bool writeFailed = ferror(f) != 0;
@@ -211,11 +218,14 @@ namespace AssetEditor {
         }
         char line[2048]{};
         if (!fgets(line, sizeof(line), f) ||
-            (strncmp(line, "AssetEditorV1", 13) != 0 && strncmp(line, "AssetEditorV2", 13) != 0)) {
+            (strncmp(line, "AssetEditorV1", 13) != 0 &&
+                strncmp(line, "AssetEditorV2", 13) != 0 &&
+                strncmp(line, "AssetEditorV3", 13) != 0)) {
             fclose(f);
             std::snprintf(status, sizeof(status), "Invalid settings: %.190s", settingsFile.c_str());
             return;
         }
+        const bool isV3 = strncmp(line, "AssetEditorV3", 13) == 0;
         int restored = 0;
         int failed = 0;
         while (fgets(line, sizeof(line), f)) {
@@ -230,11 +240,21 @@ namespace AssetEditor {
                 p = end;
             }
             if (!parsed) { ++failed; continue; }
+            float savedScale = 1.0f;
+            if (isV3) {
+                while (*p == ' ' || *p == '\t') ++p;
+                char* end = nullptr;
+                savedScale = std::strtof(p, &end);
+                if (end == p || !std::isfinite(savedScale)) { ++failed; continue; }
+                p = end;
+            }
             while (*p == ' ' || *p == '\t') ++p;
             size_t len = std::strlen(p);
             while (len > 0 && (p[len - 1] == '\n' || p[len - 1] == '\r')) p[--len] = '\0';
             const int i = (int)values[0];
             if (i < 0 || i >= SlotCount) { ++failed; continue; }
+            // 保存済み画像がない追加スロットでも倍率は維持する。
+            assets[i].drawScale = std::clamp(savedScale, 0.10f, 5.0f);
             if (*p != '\0' && std::strcmp(p, "-") != 0) {
                 if (Apply((Slot)i, p, (int)values[1], (int)values[2])) {
                     assets[i].fps = std::clamp((int)values[3], 1, 60);
@@ -299,7 +319,11 @@ namespace AssetEditor {
     inline bool DrawBackground(Slot slot) {
         const Data& a = assets[slot];
         if (a.handle < 0 || a.width <= 0 || a.height <= 0) return false;
-        Novice::DrawQuad(0, 0, 1280, 0, 0, 720, 1280, 720,
+        // 画面中央を基点に拡縮。背景の当たり判定・カメラには触れない。
+        const float scale = Scale(slot);
+        const int w = (int)(1280.0f * scale), h = (int)(720.0f * scale);
+        const int x = (1280 - w) / 2, y = (720 - h) / 2;
+        Novice::DrawQuad(x, y, x + w, y, x, y + h, x + w, y + h,
             0, 0, a.width, a.height, a.handle, WHITE);
         return true;
     }
@@ -338,6 +362,15 @@ namespace AssetEditor {
         ImGui::SameLine();
         if (ImGui::Button("元画像に戻す") && defaults[selected][0]) Apply((Slot)selected, defaults[selected]);
         ImGui::Text("画像サイズ: %d x %d px", a.width, a.height);
+        if (ImGui::SliderFloat("描画倍率 (ゲーム内)", &a.drawScale, 0.10f, 5.00f, "%.2fx"))
+            a.drawScale = std::clamp(a.drawScale, 0.10f, 5.00f);
+        ImGui::SameLine();
+        if (ImGui::Button("1.0倍に戻す")) a.drawScale = 1.0f;
+        ImGui::Text("表示倍率: %.2fx / 1コマ: %.0f x %.0f px", Scale((Slot)selected),
+            (float)a.cellW * Scale((Slot)selected), (float)a.cellH * Scale((Slot)selected));
+        if (selected >= Custom1 && selected <= Custom4) ImGui::TextWrapped("※追加PNGは登録とプレビュー用です。ゲームへの描画は接続先を設定する必要があります。");
+        else if (selected == Tentacle || selected == Gate || selected == MapChip)
+            ImGui::TextWrapped("※この素材の倍率は保存されますが、専用描画への倍率接続は未対応です。");
         if (a.handle >= 0 && a.width > 0 && a.height > 0) {
             int cw = a.cellW, ch = a.cellH;
             bool changed = false;
@@ -364,7 +397,7 @@ namespace AssetEditor {
         ImGui::Separator();
         ImGui::TextWrapped("状態: %s", status);
         ImGui::TextWrapped("保存先: %s", settingsFile.c_str());
-        ImGui::TextWrapped("注意: 触手・ゲートは元画像と同じ構成を推奨。プレイヤーは1枚絵にも対応。");
+        ImGui::TextWrapped("倍率を直接反映できるのはプレイヤー・背景・第1ボス本体です。触手物理・当たり判定は変更しません。");
 #endif
     }
 }

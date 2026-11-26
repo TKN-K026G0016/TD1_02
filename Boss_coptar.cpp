@@ -1,4 +1,7 @@
 #include "AssetEditor.h"
+#include "BossPartsEditor.h"
+#include "Stage2Tuning.h"
+#include "BossCombatEditorSettings.h"
 // 【このファイルの役割】Boss_coptar.cpp — コプターの行動・外装・戦闘AI
 // 5種類の攻撃、4ネジ解除、墜落、連打スタン、第2段階、被弾、撃破を管理する。
 
@@ -21,6 +24,20 @@ namespace {
         return 0.91f + 0.09f * std::cos(frame * 0.28f);
     }
 
+    // 第2ステージの機体画像が512pxなど横長の場合も、完全に画面外まで飛び抜ける。
+    // 判定用のボス幅は変更せず、描画上の幅だけで画面外位置を決める。
+    float Stage2VisualHalfWidth() {
+        const auto& image = AssetEditor::assets[AssetEditor::BossForm2];
+        return image.handle >= 0 && image.width > 0
+            ? image.width * AssetEditor::Scale(AssetEditor::BossForm2) * 0.5f
+            : BossStage1::kBossWidth * 0.5f;
+    }
+    float Stage2VisualHalfHeight() {
+        const auto& image = AssetEditor::assets[AssetEditor::BossForm2];
+        return image.handle >= 0 && image.height > 0
+            ? image.height * AssetEditor::Scale(AssetEditor::BossForm2) * 0.5f
+            : BossStage1::kBossHeight * 0.5f;
+    }
     float Clamp(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
     float Abs(float v) { return v < 0.0f ? -v : v; }
     float Dist2(Vector2 a, Vector2 b) {
@@ -67,9 +84,17 @@ namespace {
         const Vector2 center = { base.x + offset.x, base.y + offset.y };
         if (handle >= 0) {
             const Vector2i screen = PortalDraw::ToScreen(center);
-            const float drawScale = GetCameraZoom() * kArtScale;
-            const int w = static_cast<int>(art.width * drawScale);
-            const int h = static_cast<int>(art.height * drawScale);
+            const bool isBossBody = std::strcmp(art.path,
+                "./resources/texture/boss/form1/boss_body.png") == 0;
+            const float extraScale = isBossBody ? AssetEditor::Scale(AssetEditor::BossBody) : 1.0f;
+            const float drawScale = GetCameraZoom() * kArtScale * extraScale;
+            // 差し替えたボス本体が256px以外でも、実際のPNG寸法で中央揃えする。
+            const int imageW = isBossBody && AssetEditor::assets[AssetEditor::BossBody].width > 0
+                ? AssetEditor::assets[AssetEditor::BossBody].width : art.width;
+            const int imageH = isBossBody && AssetEditor::assets[AssetEditor::BossBody].height > 0
+                ? AssetEditor::assets[AssetEditor::BossBody].height : art.height;
+            const int w = static_cast<int>(imageW * drawScale);
+            const int h = static_cast<int>(imageH * drawScale);
             Novice::DrawSprite(screen.x - w / 2, screen.y - h / 2,
                 handle, drawScale, drawScale, -angle, 0xFFFFFFFF);
         }
@@ -119,6 +144,9 @@ void Boss::Initialize(Vector2 spawnPos) {
     targetPosition_ = nullptr; // Stage::InitStageがあとからSetTargetで接続する
     hp_ = GetMaxHp();
     coasterStage_ = false; armorRebuilt_ = rebuildOnWake_ = false; mashCount_ = 0; armorFallVelocity_ = 0.0f;
+    stage2SpecialMode_ = 0;
+    flybyStyle_ = 0; forcedFlybyStyle_ = -1; flybyStartY_ = 0.0f;
+    flybyProgress_ = 0.0f; flybySequence_ = 0; stage2FacingLeft_ = true; stage2LastSlot_ = -1;
     armorPlates_ = BossStage1::kArmorPlates - 1;
     for (int i = 0; i < kAccessoryGripCount - 1; ++i) {
         accessoryAttached_[i] = true;
@@ -156,8 +184,8 @@ void Boss::SetTarget(const Vector2* playerPosition) { targetPosition_ = playerPo
 // 既存のコア円とは別の「狙って掴む専用ポイント」。
 bool Boss::IsArmorAttached(int plate) const {
     if (plate < 0 || plate >= BossStage1::kArmorPlates || IsDefeated()) return false;
-    // まずジェットとパイプを外す。次に3本のプロペラが狙える。
-    if (!AllAccessoriesRemoved()) return false;
+    // 外装は任意の順で攻略可能。全外装が外れた時にのみボスがダウンする。
+    // 以前の「ジェット全破壊までプロペラGPを無効化」は撤廃。
     if (plate == 0) {
         // 本体は剥がせないが、プロペラ3本がなくなったら移動用グリップとして使える。
         return armorPlates_ == 0;
@@ -249,12 +277,48 @@ void Boss::SetTargetMotion(Vector2 velocity, bool grounded, bool usingWire) {
 // 距離、移動、空中、ワイヤー使用などから次の5技を評価して選択する。
 void Boss::ChooseAttack() {
     if (coasterStage_) {
-        // Stage 2: horizontal charge, then vertical charge.
-        // Stage 1's attack selection is not modified.
-        nextAttack_ = (attackCount_ % 2 == 0) ? BossAttack::Rush : BossAttack::Press;
+        // 第2ステージ専用の軽量AI。7種類すべてを機械的に順番再生するのではなく、
+        // プレイヤーの高度・横移動・グリップ状態・直前の技から攻撃を選択する。
+        // 0=縦突進、1=射撃、2=横突進、5=ミサイル、6=カッター。
+        const float x = targetPosition_ ? targetPosition_->x : 640.0f;
+        const float y = targetPosition_ ? targetPosition_->y : 300.0f;
+        const float speed = Abs(targetVelocity_.x);
+        const int slots[] = { 2, 0, 5, 6, 1 };
+        float score[] = {
+            45.0f + (targetUsingWire_ ? 12.0f : 0.0f),          // 横突進
+            35.0f + (y < 320.0f ? 21.0f : 0.0f),               // 縦突進
+            39.0f + (speed < 3.5f ? 18.0f : 0.0f),              // ミサイル
+            33.0f + (targetUsingWire_ ? 19.0f : 0.0f),         // 8の字カッター
+            28.0f + (x > 330.0f && x < 960.0f ? 10.0f : 0.0f) // 射撃
+        };
+        int bestSlot = -1;
+        float bestScore = -1.0e9f;
+        for (int i = 0; i < 5; ++i) {
+            const int slot = slots[i];
+            const bool enabled = slot == 5 ? BossCombatEditor::values.missileEnabled :
+                slot == 6 ? BossCombatEditor::values.cutterEnabled : BossCombatEditor::Enabled(slot);
+            if (!enabled) continue;
+            float v = score[i];
+            if (slot == stage2LastSlot_) v -= 46.0f; // 同じ攻撃の連続を避ける
+            if (slot == 6 && attackCount_ % 4 == 2) v += 32.0f; // カッターを定期的に採用
+            if (slot == 0 && attackCount_ % 4 == 3) v += 30.0f; // 縦突進も忘れない
+            // 毎回固定順にならない程度の小さな決定的変化（ランダム生成なし）。
+            v += float((attackCount_ * 11 + slot * 19) % 17);
+            if (v > bestScore) { bestScore = v; bestSlot = slot; }
+        }
+        if (bestSlot < 0) return;
+        stage2LastSlot_ = bestSlot;
         ++attackCount_;
+        if (bestSlot >= 5) {
+            stage2SpecialMode_ = bestSlot - 4;
+            ChangeState(BossState::Stage2Special);
+        }
+        else {
+            nextAttack_ = static_cast<BossAttack>(bestSlot);
+        }
         return;
     }
+
     // 【重要】攻撃種類は従来の5種類のまま。
     // 毎回固定の並びにせず、プレイヤーの位置・動き・ワイヤー使用を採点する。
     // 直前と2回前の攻撃にはペナルティを付けて単調な繰り返しを防ぐ。
@@ -265,6 +329,9 @@ void Boss::ChooseAttack() {
             BossAttack::Top,BossAttack::YoYo
         };
         nextAttack_ = order[attackCount_];
+        if (!BossCombatEditor::Enabled(int(nextAttack_))) {
+            for (const BossAttack a : order)if (BossCombatEditor::Enabled(int(a))) { nextAttack_ = a;break; }
+        }
     }
     else {
         const float dx = targetPosition_ ? Abs(targetPosition_->x - position_.x) : 480.0f;
@@ -300,6 +367,7 @@ void Boss::ChooseAttack() {
         // 長期間使っていない技ほど少し優先する（5種類すべてが出る）。
         for (int i = 0; i < 5; ++i) {
             score[i] += Clamp(static_cast<float>(attackStaleness_[i]) * 11.0f, 0.0f, 70.0f);
+            if (!BossCombatEditor::Enabled(i))score[i] = -1000000.0f;
         }
         int best = 0;
         float bestValue = -100000.0f;
@@ -343,10 +411,19 @@ void Boss::ChangeState(BossState next) {
         break;
     case BossState::Warning:
         // プレス予兆は最初に標的を決め、攻撃直前には追尾しない。
-        pressTargetX_ = targetPosition_ ? targetPosition_->x : position_.x;
+        pressTargetX_ = (targetPosition_ ? targetPosition_->x : position_.x) + BossCombatEditor::values.startOffsetX[int(BossAttack::Press)];
         // 【床上の突進】プレイヤーが空中にいても、高さを追尾しない。
         // 予兆から本番まで床スレスレの一定高度。ジャンプ/ワイヤーで飛び越せる。
-        rushTargetY_ = BossStage1::kRushGroundY;
+        rushTargetY_ = (coasterStage_ ? Stage2Tuning::values.rushHeight : BossStage1::kRushGroundY)
+            + BossCombatEditor::values.startOffsetY[int(BossAttack::Rush)];
+        if (coasterStage_ && nextAttack_ == BossAttack::Rush) {
+            // 同じ横突進を4つの飛行パターンとして使う。新しい弾や画像は増やさない。
+            flybyStyle_ = forcedFlybyStyle_ >= 0 ? forcedFlybyStyle_ : flybySequence_ % 4;
+            forcedFlybyStyle_ = -1; ++flybySequence_;
+            if (!Stage2Tuning::values.flybyVariants) flybyStyle_ = 0;
+            if (flybyStyle_ == 1) rushTargetY_ += Stage2Tuning::values.flybyArcHeight * 0.75f;
+            flybyStartY_ = rushTargetY_;
+        }
         if (nextAttack_ == BossAttack::Rush) {
             wireUsedDuringRush_ = false;
             rushHitPlayer_ = false;
@@ -355,10 +432,17 @@ void Boss::ChangeState(BossState next) {
             // 予兆開始時に方向を固定し、途中でプレイヤーが動いても反転させない。
             const float middleX = (BossStage1::kArenaLeft + BossStage1::kArenaRight) * 0.5f;
             rushDirection_ = (!targetPosition_ || targetPosition_->x >= middleX) ? 1 : -1;
-            const float halfWidth = BossStage1::kBossWidth * 0.5f;
-            rushTargetX_ = (rushDirection_ > 0)
-                ? BossStage1::kArenaRight - halfWidth
-                : BossStage1::kArenaLeft + halfWidth;
+            if (coasterStage_) stage2FacingLeft_ = rushDirection_ < 0;
+            const float halfWidth = coasterStage_ ? Stage2VisualHalfWidth() : BossStage1::kBossWidth * 0.5f;
+            if (coasterStage_) {
+                const float outside = Stage2Tuning::values.flybyOutsideMargin + halfWidth;
+                rushTargetX_ = (rushDirection_ > 0) ? 1280.0f + outside : -outside;
+            }
+            else {
+                rushTargetX_ = (rushDirection_ > 0)
+                    ? BossStage1::kArenaRight - halfWidth
+                    : BossStage1::kArenaLeft + halfWidth;
+            }
         }
         visual_.SetMode(BossVfxMode::Warning);
         break;
@@ -368,7 +452,16 @@ void Boss::ChangeState(BossState next) {
         rushVelocity_ = 0.0f;
         visual_.SetMode(BossVfxMode::Rush);
         break;
+    case BossState::Stage2Special:
+        // 特殊攻撃では実行中に別の攻撃を選ばない。
+        flightVelocity_ = {};
+        visual_.SetMode(BossVfxMode::Warning);
+        break;
     case BossState::Recovery: visual_.SetMode(BossVfxMode::Recovery); break;
+    case BossState::ScrewRepair:
+        flightVelocity_ = {};
+        visual_.SetMode(BossVfxMode::Recovery);
+        break;
     case BossState::ArmorCurl:
         // ネジ全解除で専用イベントへ移る。飛んでいた弾が連打を邪魔しないよう消す。
         for (auto& b : bullets_)b.active = false;
@@ -421,7 +514,8 @@ void Boss::ChangeState(BossState next) {
                 (toyDirection_ > 0 && (kTopFloorRight - kTopVisibleHalfWidth) - position_.x < 300.0f))
                 toyDirection_ = -toyDirection_;
         }
-        toyPosition_ = { position_.x + toyDirection_ * 47.0f,position_.y - 20.0f };
+        toyPosition_ = { position_.x + toyDirection_ * 47.0f + BossCombatEditor::values.startOffsetX[int(nextAttack_)],
+            position_.y - 20.0f + BossCombatEditor::values.startOffsetY[int(nextAttack_)] };
         toyVelocity_ = { toyDirection_ * (nextAttack_ == BossAttack::Top ? battleSettings_.topInitialSpeed : 14.5f),3.0f };
         toyHasHitPlayer_ = false;
         topLanded_ = false;
@@ -574,36 +668,53 @@ void Boss::UpdatePress() {
         ++pressFrame_;
         switch (pressPhase_) {
         case PressPhase::Align:
-            position_.x = Approach(position_.x, pressTargetX_, 15.0f);
-            position_.y = Approach(position_.y, 600.0f, 13.0f);
+            position_.x = Approach(position_.x, pressTargetX_, Stage2Tuning::values.alignXSpeed);
+            position_.y = Approach(position_.y, Stage2Tuning::values.verticalStartHeight + BossCombatEditor::values.startOffsetY[int(BossAttack::Press)], Stage2Tuning::values.alignYSpeed);
             if (Abs(position_.x - pressTargetX_) < 1.0f &&
-                Abs(position_.y - 600.0f) < 1.0f)
+                Abs(position_.y - (Stage2Tuning::values.verticalStartHeight + BossCombatEditor::values.startOffsetY[int(BossAttack::Press)])) < 1.0f)
                 ChangePressPhase(PressPhase::Charge);
             break;
         case PressPhase::Charge:
             // A visible pause makes the vertical lane readable.
-            if (pressFrame_ >= 32) ChangePressPhase(PressPhase::Dive);
+            if (pressFrame_ >= Stage2Tuning::values.verticalWaitFrames) ChangePressPhase(PressPhase::Dive);
             break;
         case PressPhase::Dive:
-            pressFallSpeed_ = Clamp(pressFallSpeed_ + 1.9f, 0.0f, 31.0f);
+            pressFallSpeed_ = Clamp(pressFallSpeed_ + Stage2Tuning::values.verticalAccel,
+                0.0f, Stage2Tuning::values.verticalMaxSpeed);
             position_.y -= pressFallSpeed_;
-            if (position_.y <= BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f) {
-                position_.y = BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f;
+            // 機体全体が画面下へ抜けてから攻撃終了。床で急停止させない。
+            // 画面外で復帰を始めるため、予兆なしの戻りに当たり判定はない。
+            if (position_.y <= -Stage2VisualHalfHeight() - Stage2Tuning::values.flybyOutsideMargin) {
                 ChangePressPhase(PressPhase::Impact);
-                ShakeCamera(9.0f, 13);
-                visual_.OnImpact({ position_.x, BossStage1::kFloorY + 5.0f });
+                ShakeCamera(4.0f, 5);
             }
             break;
         case PressPhase::Impact:
             if (pressFrame_ >= 8) ChangePressPhase(PressPhase::Stun);
             break;
         case PressPhase::Stun:
-            if (pressFrame_ >= 38) ChangePressPhase(PressPhase::Return);
+            if (pressFrame_ >= Stage2Tuning::values.verticalRecoveryFrames)
+                ChangePressPhase(PressPhase::Return);
             break;
-        case PressPhase::Return:
-            position_.y = Approach(position_.y, 370.0f, 9.0f);
-            if (Abs(position_.y - 370.0f) < 1.0f) ChangeState(BossState::Idle);
+        case PressPhase::Return: {
+            // まず画面下を水平飛行し、その後画面外の側面を上昇。
+            // 画面内にテレポートしたり、無警告で上昇衝突したりしない。
+            const float sideX = pressTargetX_ < 640.0f ?
+                -Stage2VisualHalfWidth() - Stage2Tuning::values.flybyOutsideMargin - 20.0f :
+                1280.0f + Stage2VisualHalfWidth() + Stage2Tuning::values.flybyOutsideMargin + 20.0f;
+            if (Abs(position_.x - sideX) > 1.0f) {
+                position_.x = Approach(position_.x, sideX, 21.0f);
+            }
+            else {
+                position_.y = Approach(position_.y, Stage2Tuning::values.verticalReturnHeight, 17.0f);
+                if (Abs(position_.y - Stage2Tuning::values.verticalReturnHeight) < 1.0f) {
+                    flightDestination_ = { 640.0f, Stage2Tuning::values.verticalReturnHeight };
+                    flightTimer_ = 120;
+                    ChangeState(BossState::Idle);
+                }
+            }
             break;
+        }
         }
         return;
     }
@@ -672,7 +783,8 @@ void Boss::Shoot(int spreadIndex) {
                                 BossStage1::kArenaLeft,BossStage1::kArenaRight),
                           Clamp(current.y + targetVelocity_.y * battleSettings_.shotPredict,
                                 BossStage1::kFloorY + 20.0f,PortalConfig::kWorldCeiling) };
-    b.position = { position_.x,target.y > position_.y ? position_.y + 12.0f : position_.y - 12.0f };
+    b.position = { position_.x + BossCombatEditor::values.startOffsetX[int(BossAttack::Shot)],
+        (target.y > position_.y ? position_.y + 12.0f : position_.y - 12.0f) + BossCombatEditor::values.startOffsetY[int(BossAttack::Shot)] };
     float dx = target.x - b.position.x, dy = target.y - b.position.y + spreadIndex * 34.0f;
     const float len = std::sqrt(dx * dx + dy * dy);
     const float speed = IsEnraged() ? 15.5f : 13.0f; // 銃撃は数ではなく速度で強く
@@ -680,13 +792,29 @@ void Boss::Shoot(int spreadIndex) {
     else b.velocity = { -speed,0.0f };
     visual_.OnMuzzleFlash(b.position);
 }
-void Boss::TriggerAttackForEditor(BossAttack attack) {
-    if (IsDefeated() || state_ == BossState::ArmorCurl ||
-        state_ == BossState::ArmorFalling || state_ == BossState::ArmorImpact ||
-        state_ == BossState::ArmorStun || state_ == BossState::WakeBlast) return;
-    if (attack != BossAttack::Top && attack != BossAttack::YoYo) return;
+bool Boss::TriggerAttackForEditor(BossAttack attack) {
+    // テストボタンは全5技に対応。通常AIのON/OFFは無視する。
+    if (IsDefeated() || state_ == BossState::ArmorCurl || state_ == BossState::ArmorFalling ||
+        state_ == BossState::ArmorImpact || state_ == BossState::ArmorStun || state_ == BossState::WakeBlast)
+        return false;
+    for (auto& b : bullets_)b.active = false;
+    repairingScrew_ = -1;
     nextAttack_ = attack;
-    ChangeState(BossState::Toy);
+    ChangeState(BossState::Warning); // 始点まで移動→予兆→攻撃、ワープしない
+    return true;
+}
+bool Boss::TriggerFlybyForEditor(int style) {
+    if (!coasterStage_ || style < 0 || style > 3) return false;
+    forcedFlybyStyle_ = style;
+    if (TriggerAttackForEditor(BossAttack::Rush)) return true;
+    forcedFlybyStyle_ = -1;
+    return false;
+}
+bool Boss::BeginScrewRepair(int screwIndex) {
+    if (!BossCombatEditor::values.repairEnabled || state_ != BossState::Idle || IsDefeated())return false;
+    repairingScrew_ = screwIndex;
+    ChangeState(BossState::ScrewRepair);
+    return true;
 }
 
 void Boss::UpdateToy() {
@@ -785,7 +913,7 @@ int Boss::TryHitPlayer(Vector2 playerPosition, float playerRadius, Vector2* hitS
     if (coasterStage_ && state_ == BossState::Rush) {
         const float dx = Abs(playerPosition.x - position_.x);
         if (dx <= BossStage1::kBossWidth * 0.5f + playerRadius &&
-            playerPosition.y <= rushTargetY_ + kHitRadius + playerRadius) {
+            Abs(playerPosition.y - position_.y) <= kHitRadius + playerRadius) {
             rushHitPlayer_ = true;
             if (hitSource) *hitSource = position_;
             return 18;
@@ -822,8 +950,13 @@ void Boss::UpdateFlight() {
         const float desiredY = Clamp(dy * 0.052f, -4.0f, 4.0f);
         flightVelocity_.x += (desiredX - flightVelocity_.x) * 0.065f;
         flightVelocity_.y += (desiredY - flightVelocity_.y) * 0.055f;
-        position_.x = Clamp(position_.x + flightVelocity_.x, 150.0f, 1130.0f);
-        position_.y = Clamp(position_.y + flightVelocity_.y, 210.0f, 590.0f);
+        // 画面外への突進後は、毎フレーム移動して画面内へ再進入する。
+        // Clampで突然150/1130へワープさせない。
+        // 画面外からの帰還中も座標を突然クランプしない（不自然なワープの原因）。
+        position_.x += flightVelocity_.x;
+        position_.y += flightVelocity_.y;
+        if (Abs(flightVelocity_.x) > 0.6f)
+            stage2FacingLeft_ = flightVelocity_.x < 0.0f;
         return;
     }
     if (--flightTimer_ <= 0) {
@@ -890,15 +1023,25 @@ void Boss::Update() {
     ++stateFrame_;
     // 【注目】【状態別の開始処理】新状態になった瞬間に目標固定・弾消去・カメラ演出等を行う。
     switch (state_) {
-    case BossState::Idle:
+    case BossState::Idle: {
         // 【直した原因③】射撃で横へノックバックした後、そのまま位置がズレ続けていた。
         // 毎回同じ位置へ戻さず、新しい巡回地点へ向かう。
         UpdateFlight();
-        if (stateFrame_ >= ((coasterStage_ || IsEnraged()) ? 24 : battleSettings_.idleFrames)) {
-            ChooseAttack();
-            ChangeState(BossState::Warning);
+        const bool stage2Ready = !coasterStage_ ||
+            (position_.x > 210.0f && position_.x < 1070.0f &&
+                position_.y > 190.0f && position_.y < 630.0f);
+        // 画面外で攻撃の選択を始めない。再進入から一定時間の隙も作る。
+        if (stage2Ready && stateFrame_ >= (coasterStage_ ? 65 :
+            (IsEnraged() ? 24 : battleSettings_.idleFrames))) {
+            const bool anyAttack = BossCombatEditor::AnyAttackEnabled() ||
+                (coasterStage_ && (BossCombatEditor::values.missileEnabled || BossCombatEditor::values.cutterEnabled));
+            if (anyAttack) {
+                ChooseAttack();
+                if (state_ == BossState::Idle) ChangeState(BossState::Warning);
+            }
         }
         break;
+    }
     case BossState::Warning: {
         // 技ごとに予兆時間を変える。種類は今までの5つを維持。
         int durationFrames = BossStage1::kWarningFrames;
@@ -911,15 +1054,19 @@ void Boss::Update() {
         const float duration = static_cast<float>(coasterStage_ && nextAttack_ == BossAttack::Rush ? 60 :
             (IsEnraged() ? durationFrames * 3 / 4 : durationFrames));
         // プレスは予兆前半だけ追尾し、後半は予測位置が固定される。
-        if (nextAttack_ == BossAttack::Press && stateFrame_ < 12 && targetPosition_)
-            pressTargetX_ = targetPosition_->x;
+        // ステージ2の縦突進は予兆開始時にX座標を固定する。
+        // 予兆線を見て回避した後で追尾し直すと、表示と実際の着弾位置がずれるため。
+        if (!coasterStage_ && nextAttack_ == BossAttack::Press && stateFrame_ < 12 && targetPosition_)
+            pressTargetX_ = targetPosition_->x + BossCombatEditor::values.startOffsetX[int(BossAttack::Press)];
         // 突進の予兆中は「開始側の端」へ飛んでいき、床スレスレまで降りる。
         // Approachで最大移動量を制限するため、開始位置へのテレポートは起きない。
         if (nextAttack_ == BossAttack::Rush) {
-            const float halfWidth = BossStage1::kBossWidth * 0.5f;
+            const float halfWidth = coasterStage_ ? Stage2VisualHalfWidth() : BossStage1::kBossWidth * 0.5f;
             const float startX = rushDirection_ > 0
-                ? BossStage1::kArenaLeft + halfWidth
-                : BossStage1::kArenaRight - halfWidth;
+                ? (coasterStage_ ? -halfWidth - Stage2Tuning::values.flybyOutsideMargin : BossStage1::kArenaLeft + halfWidth)
+                + BossCombatEditor::values.startOffsetX[int(BossAttack::Rush)]
+                : (coasterStage_ ? 1280.0f + halfWidth + Stage2Tuning::values.flybyOutsideMargin : BossStage1::kArenaRight - halfWidth)
+                + BossCombatEditor::values.startOffsetX[int(BossAttack::Rush)];
             position_.x = Approach(position_.x, startX, 18.0f);
             position_.y = Approach(position_.y, rushTargetY_, 8.0f);
         }
@@ -931,16 +1078,22 @@ void Boss::Update() {
             warningY = BossStage1::kFloorY + BossStage1::kBossHeight * 0.5f;
         else if (nextAttack_ == BossAttack::Top)
             warningY = BossStage1::kFloorY + 25.0f;
-        visual_.SetWarning(Clamp(stateFrame_ / duration, 0.0f, 1.0f),
-            { nextAttack_ == BossAttack::Press ? pressTargetX_ : targetPos.x,warningY });
+        // VFXの照準も実際のレーンへ合わせる（旧実装はプレイヤーの現在Xを指していた）。
+        const Vector2 warningPoint =
+            (coasterStage_ && nextAttack_ == BossAttack::Rush) ? Vector2{ 640.0f, rushTargetY_ } :
+            (coasterStage_ && nextAttack_ == BossAttack::Press) ? Vector2{ pressTargetX_, 360.0f } :
+            Vector2{ nextAttack_ == BossAttack::Press ? pressTargetX_ : targetPos.x, warningY };
+        visual_.SetWarning(Clamp(stateFrame_ / duration, 0.0f, 1.0f), warningPoint);
         // 突進だけは、予兆時間が終わっても開始側の端に着くまで攻撃を始めない。
         // そのため、どこから予兆に入っても必ずステージの端から端まで走れる。
         bool readyToRush = true;
         if (nextAttack_ == BossAttack::Rush) {
-            const float halfWidth = BossStage1::kBossWidth * 0.5f;
+            const float halfWidth = coasterStage_ ? Stage2VisualHalfWidth() : BossStage1::kBossWidth * 0.5f;
             const float startX = rushDirection_ > 0
-                ? BossStage1::kArenaLeft + halfWidth
-                : BossStage1::kArenaRight - halfWidth;
+                ? (coasterStage_ ? -halfWidth - Stage2Tuning::values.flybyOutsideMargin : BossStage1::kArenaLeft + halfWidth)
+                + BossCombatEditor::values.startOffsetX[int(BossAttack::Rush)]
+                : (coasterStage_ ? 1280.0f + halfWidth + Stage2Tuning::values.flybyOutsideMargin : BossStage1::kArenaRight - halfWidth)
+                + BossCombatEditor::values.startOffsetX[int(BossAttack::Rush)];
             readyToRush = Abs(position_.x - startX) <= 0.5f &&
                 Abs(position_.y - rushTargetY_) <= 0.5f;
         }
@@ -954,19 +1107,63 @@ void Boss::Update() {
         }
         break;
     }
+    case BossState::Stage2Special: {
+        // 画面外からは安全に中央付近へ戻ってから予兆を開始する。
+        // 帰還が終わるまでタイマーを進めないため、ミサイルだけ場外発射されない。
+        if (position_.x < 270.0f || position_.x > 1010.0f ||
+            position_.y < 290.0f || position_.y > 520.0f) {
+            // 戦闘機は画面外から滑らかに帰還。ワープせず戻りきってから警告を開始。
+            const float wantedX = Clamp((640.0f - position_.x) * 0.055f, -14.0f, 14.0f);
+            const float wantedY = Clamp((410.0f - position_.y) * 0.06f, -10.0f, 10.0f);
+            flightVelocity_.x += (wantedX - flightVelocity_.x) * 0.14f;
+            flightVelocity_.y += (wantedY - flightVelocity_.y) * 0.14f;
+            position_.x += flightVelocity_.x;
+            position_.y += flightVelocity_.y;
+            if (Abs(flightVelocity_.x) > 0.6f) stage2FacingLeft_ = flightVelocity_.x < 0.0f;
+            stateFrame_ = 0;
+            break;
+        }
+        flightVelocity_ = {};
+        // ミサイルは実際の機首側から出るよう、攻撃前に狙う方向へ向ける。
+        if (stage2SpecialMode_ == 1 && targetPosition_)
+            stage2FacingLeft_ = targetPosition_->x < position_.x;
+        // 0〜30F: 予兆 / 30F以降: 武装使用 / 終了後: 復帰。
+        // ミサイル・カッターの生成/当たり判定はStage2Gimmicks側で同期更新。
+        const int total = stage2SpecialMode_ == 1 ? 200 :
+            40 + Stage2Tuning::values.cutterDuration + 25;
+        if (stateFrame_ >= total) { stage2SpecialMode_ = 0; ChangeState(BossState::Recovery); }
+        break;
+    }
     case BossState::Rush: {
         // ステージの端から反対側の端まで、プレイヤーの現在位置に左右されず突進する。
-        position_.y = rushTargetY_;
+        if (!coasterStage_) position_.y = rushTargetY_;
         const float maxSpeed = (battleSettings_.rushSpeed > 1.0f ? battleSettings_.rushSpeed : 1.0f) *
-            (coasterStage_ ? 1.75f : (IsEnraged() ? 1.25f : 1.0f));
+            (coasterStage_ ? Stage2Tuning::values.rushSpeedMultiplier * Stage2Tuning::values.flybySpeed : (IsEnraged() ? 1.25f : 1.0f));
         const float accel = battleSettings_.rushAccel > 0.1f ? battleSettings_.rushAccel : 0.1f;
         rushVelocity_ = Clamp(rushVelocity_ + accel, 0.0f, maxSpeed);
         position_.x += rushDirection_ * rushVelocity_;
+        if (coasterStage_) {
+            // 前方から後方まで滑らかに高度を変える。画面内でワープしない。
+            const float startX = rushDirection_ > 0 ?
+                -Stage2VisualHalfWidth() - Stage2Tuning::values.flybyOutsideMargin :
+                1280.0f + Stage2VisualHalfWidth() + Stage2Tuning::values.flybyOutsideMargin;
+            const float span = (std::max)(1.0f, std::fabs(rushTargetX_ - startX));
+            flybyProgress_ = Clamp(std::fabs(position_.x - startX) / span, 0.0f, 1.0f);
+            const float arc = Stage2Tuning::values.flybyArcHeight;
+            constexpr float pi = 3.14159265f;
+            switch (flybyStyle_) {
+            case 1: position_.y = flybyStartY_; break; // 上空を水平通過
+            case 2: position_.y = flybyStartY_ + arc * flybyProgress_; break; // 急上昇
+            case 3: position_.y = flybyStartY_ + arc * std::sin(flybyProgress_ * pi * 2.0f); break; // S字
+            default: position_.y = flybyStartY_; break; // 低空水平
+            }
+        }
 
         // 機体の幅も含めて端に収まる位置で止める。行き過ぎや画面外への消失を防ぐ。
         const bool reachedEdge = rushDirection_ < 0 ?
             position_.x <= rushTargetX_ : position_.x >= rushTargetX_;
         if (reachedEdge) {
+            // 画面外で初めて終了する。第1ステージは従来の端で停止。
             position_.x = rushTargetX_;
             rushVelocity_ = 0.0f;
             rushDodgeStunPending_ = wireUsedDuringRush_ && !rushHitPlayer_;
@@ -975,6 +1172,10 @@ void Boss::Update() {
         }
         break;
     }
+    case BossState::ScrewRepair:
+        // 手を伸ばす描画はStage側。移動・攻撃を停止してネジを締める。
+        if (stateFrame_ >= BossCombatEditor::values.repairDuration) { repairingScrew_ = -1;ChangeState(BossState::Idle); }
+        break;
     case BossState::Recovery:
         // 突進を終えた場所から滑らかに飛行再開。固定位置には戻らない。
         // 反動で場外に出ないよう、端で速度を落としてから自由飛行へ移る。
@@ -1027,18 +1228,32 @@ void Boss::Update() {
         break;
     case BossState::Press: UpdatePress(); break;
     case BossState::Shot:
-        // 2回の3方向射撃（計6発）。弾数が少なくても回避を考えさせる。
-        if (stateFrame_ == 9 || stateFrame_ == 28) {
-            for (int i = -1;i <= 1;++i) Shoot(i);
-            ShakeCamera(1.8f, 3);
-            position_.x -= rushDirection_ * 16.0f; // 反動。次は今の位置から飛行する
+        if (coasterStage_) {
+            // ステージ2専用：画面内で減速し、約1.5秒間に3回の射撃。
+            // 画面外へ抜ける突進と交互に出し、反撃できる時間を作る。
+            flightVelocity_.x *= 0.85f;
+            flightVelocity_.y *= 0.85f;
+            position_.x = Approach(position_.x, Clamp(position_.x, 280.0f, 1000.0f), 13.0f);
+            position_.y = Approach(position_.y, 425.0f, 9.0f);
+            if (stateFrame_ == 12 || stateFrame_ == 36 || stateFrame_ == 60) {
+                for (int i = -1; i <= 1; ++i) Shoot(i);
+                ShakeCamera(1.8f, 3);
+            }
+            if (stateFrame_ >= 90) ChangeState(BossState::Recovery);
         }
-        else if (stateFrame_ > 9 && stateFrame_ < 42) {
-            // 射撃中は反動の余韻だけを残す。目標位置へ引き戻さない。
-            flightVelocity_.x *= 0.88f;
-            position_.x = Clamp(position_.x + flightVelocity_.x, 225.0f, 1055.0f);
+        else {
+            // ステージ1は従来通り、2回の3方向射撃。
+            if (stateFrame_ == 9 || stateFrame_ == 28) {
+                for (int i = -1; i <= 1; ++i) Shoot(i);
+                ShakeCamera(1.8f, 3);
+                position_.x -= rushDirection_ * 16.0f;
+            }
+            else if (stateFrame_ > 9 && stateFrame_ < 42) {
+                flightVelocity_.x *= 0.88f;
+                position_.x = Clamp(position_.x + flightVelocity_.x, 225.0f, 1055.0f);
+            }
+            if (stateFrame_ >= 48) ChangeState(BossState::Idle);
         }
-        if (stateFrame_ >= 48) ChangeState(BossState::Idle);
         break;
     case BossState::Toy: UpdateToy(); break;
     case BossState::Defeated: break;
@@ -1053,6 +1268,29 @@ void Boss::Update() {
 }
 // 現在の状態を画面に表示する。基本的にゲームの座標やHPは変えない。
 void Boss::Draw() const {
+    // ステージ2の退場飛行。画面端に旧VFXや尻尾が残らないよう、
+    // 機体の中心が退場したらボスの描画一式を停止する。
+    // 攻撃予兆は機体が場外でも表示する。機体・GPだけを場外で非表示にする。
+    bool fullyOutside = false;
+    if (coasterStage_) {
+        const float half = Stage2VisualHalfWidth();
+        // 向きと回転を考慮した保守的な表示判定。画面端の機体の一部を途中で消さない。
+        const float extent = (std::max)(half, Stage2VisualHalfHeight());
+        fullyOutside = position_.x < -extent || position_.x > 1280.0f + extent ||
+            position_.y < -extent || position_.y > 720.0f + extent;
+    }
+    // ミサイルとカッターにも30Fの予兆を付ける（実行中は表示しない）。
+    if (coasterStage_ && state_ == BossState::Stage2Special && stateFrame_ < 30) {
+        const unsigned int blink = (stateFrame_ / 6) % 2 ? 0xFF6A6ADA : 0xFF6A6A66;
+        if (stage2SpecialMode_ == 1) {
+            const Vector2 t = targetPosition_ ? *targetPosition_ : Vector2{ 640.0f, 350.0f };
+            PortalDraw::Line(position_, t, blink);
+        }
+        else if (stage2SpecialMode_ == 2) {
+            // カッターは線で全軌道を描かず、発射前の短い点滅だけ示す。
+            PortalDraw::Circle(position_, 42.0f, blink);
+        }
+    }
     // 【技が見て分かる予兆】種類を増やさず、各攻撃で異なる警告図形を1～2個だけ表示。
     // 大量パーティクルは使わない。攻撃開始後は予兆を消して判定と対応させる。
     if (state_ == BossState::Warning) {
@@ -1060,17 +1298,37 @@ void Boss::Draw() const {
         const Vector2 target = targetPosition_ ? *targetPosition_ : position_;
         switch (nextAttack_) {
         case BossAttack::Rush:
-            PortalDraw::Box({ (BossStage1::kArenaLeft + BossStage1::kArenaRight) * 0.5f, rushTargetY_ },
-                BossStage1::kArenaRight - BossStage1::kArenaLeft, 7.0f, color);
             if (coasterStage_) {
-                const float ceiling = rushTargetY_ + kHitRadius;
-                PortalDraw::Box({ 640.0f, (ceiling + BossStage1::kFloorY) * 0.5f },
-                    1270.0f, ceiling - BossStage1::kFloorY, 0xFF644334);
+                // ステージ2: 水平・高空・上昇・S字を実際の飛行式と同じ計算で予告。
+                // 旧コードはどの軌道も水平線だったのでS字や上昇時に警告がずれていた。
+                const float arc = Stage2Tuning::values.flybyArcHeight;
+                constexpr float pi = 3.14159265f;
+                Vector2 prev{};
+                for (int i = 0; i <= 32; ++i) {
+                    const float t = static_cast<float>(i) / 32.0f;
+                    float y = flybyStartY_;
+                    if (flybyStyle_ == 2) y += arc * t;
+                    if (flybyStyle_ == 3) y += arc * std::sin(t * pi * 2.0f);
+                    const Vector2 point = { rushDirection_ > 0 ? 1280.0f * t : 1280.0f * (1.0f - t), y };
+                    if (i > 0) PortalDraw::Line(prev, point, color);
+                    prev = point;
+                }
+            }
+            else {
+                PortalDraw::Box({ (BossStage1::kArenaLeft + BossStage1::kArenaRight) * 0.5f, rushTargetY_ },
+                    BossStage1::kArenaRight - BossStage1::kArenaLeft, 7.0f, color);
             }
             break;
         case BossAttack::Press:
-            // どこへ落ちてくるか床に予測エリア。移動して回避できる。
-            PortalDraw::Box({ pressTargetX_,BossStage1::kFloorY + 5 }, BossStage1::kBossWidth + 35.0f, 7.0f, color);
+            if (coasterStage_) {
+                // 縦突進: 実際に固定したX座標を画面全体へ予告する。
+                // 攻撃の中心線と当たり判定幅を別々に示す。
+                PortalDraw::Box({ pressTargetX_, 360.0f }, BossStage1::kBossWidth + 35.0f, 720.0f, 0xF15D5828);
+                PortalDraw::Line({ pressTargetX_, 0.0f }, { pressTargetX_, 720.0f }, color);
+            }
+            else {
+                PortalDraw::Box({ pressTargetX_,BossStage1::kFloorY + 5 }, BossStage1::kBossWidth + 35.0f, 7.0f, color);
+            }
             break;
         case BossAttack::Shot:
             // 射線を1本だけ示す。発射後の弾の位置は固定される。
@@ -1087,7 +1345,9 @@ void Boss::Draw() const {
             break;
         }
     }
-    visual_.DrawBehind(position_);
+    if (fullyOutside) return;
+    // 第2ステージでは第1形態の装飾/尻尾VFXを出さない。
+    if (!coasterStage_) visual_.DrawBehind(position_);
     float bodyLean = 0.0f;
     if (state_ != BossState::ArmorFalling && state_ != BossState::ArmorImpact &&
         state_ != BossState::ArmorStun && state_ != BossState::WakeBlast) {
@@ -1098,41 +1358,101 @@ void Boss::Draw() const {
     static int breakHandles[BossStage1::kArmorPlates] = { -2,-2,-2,-2 };
     static int extraHandles[kAccessoryGripCount] = { -2,-2,-2,-2,-2,-2 };
 
-    // 背面のパーツから描く。最後に本体と目を置くことで重なりが自然になる。
-    for (int order = 0; order < kAccessoryGripCount - 1; ++order) {
-        const int i = (order == 0 ? 4 : order - 1);
-        if (!accessoryAttached_[i] && detachedAccessoryFrames_[i] <= 0) continue;
-        Vector2 center = position_;
-        float angle = bodyLean;
-        if (!accessoryAttached_[i]) {
-            const float t = 100.0f - detachedAccessoryFrames_[i];
-            center = detachedAccessoryPosition_[i];
-            center.x += (i % 2 == 0 ? -1.0f : 1.0f) * t * 2.1f;
-            center.y += t * 1.3f - t * t * 0.18f;
-            angle = t * (i % 2 == 0 ? -0.05f : 0.05f);
-            if (center.y < -180.0f) continue;
-        }
-        DrawImagePart(kAccessoryArt[i], center, angle, extraHandles[i]);
+    // ステージ2は専用機体PNGを使用。第1ステージの機械パーツを流用しない。
+    // GP・ネジの描画はこの後の共通処理を使うため、当たり判定は変更しない。
+    if (BossPartsEditor::Active(coasterStage_ ? 1 : 0)) {
+        // カスタムパーツはボスの描画だけ置き換える。GP・装甲・物理は既存を使用。
+        const Vector2i point = PortalDraw::ToScreen(position_);
+        const bool flip = coasterStage_ &&
+            (state_ == BossState::Rush ? rushDirection_ > 0 : !stage2FacingLeft_);
+        BossPartsEditor::DrawWorld(coasterStage_ ? 1 : 0, float(point.x), float(point.y),
+            GetCameraZoom(), flip, [&](int link) {
+                if (link >= 0 && link <= 3) return IsArmorAttached(link);
+                if (link >= 10 && link <= 15) return IsAccessoryGripEnabled(link - 10);
+                return true;
+            });
     }
-    for (int i = 1; i < BossStage1::kArmorPlates; ++i) {
-        if (i != 0 && !armorAttached_[i] && peeledFrames_[i] <= 0) continue;
-        Vector2 center = position_;
-        float angle = bodyLean;
-        if (i != 0 && !armorAttached_[i]) {
-            const float t = 100.0f - peeledFrames_[i];
-            center = peeledPosition_[i];
-            center.x += (i % 2 == 0 ? -1.0f : 1.0f) * t * 2.3f;
-            center.y += t * 1.8f - t * t * 0.20f;
-            angle = t * (i % 2 == 0 ? -0.045f : 0.045f);
-            if (center.y < -180.0f) continue;
+    else if (coasterStage_ && AssetEditor::Handle(AssetEditor::BossForm2) >= 0) {
+        const auto& a = AssetEditor::assets[AssetEditor::BossForm2];
+        const float scale = GetCameraZoom() * AssetEditor::Scale(AssetEditor::BossForm2);
+        const Vector2i point = PortalDraw::ToScreen(position_);
+        const int w = static_cast<int>(a.width * scale);
+        const int h = static_cast<int>(a.height * scale);
+        float bank = 0.0f;
+        if (state_ == BossState::Rush) {
+            if (flybyStyle_ == 2) bank = rushDirection_ * 0.20f;
+            if (flybyStyle_ == 3) bank = rushDirection_ * 0.18f *
+                std::cos(flybyProgress_ * 6.2831853f);
         }
-        DrawImagePart(kBreakArt[i], center, angle, breakHandles[i]);
+        // 戦闘機らしい機体の傾きは見た目のみ。ネジ/GPの座標はそのまま。
+        // 元画像は左向きが基準。進行方向と画像の頭の向きを一致させる。
+        // ステージ2で縦急降下中は必ず機首を真下へ向ける。
+        const bool dive = state_ == BossState::Press && pressPhase_ == PressPhase::Dive;
+        const bool faceLeft = dive ? true :
+            (state_ == BossState::Rush ? rushDirection_ < 0 : stage2FacingLeft_);
+        if (dive) {
+            // 画像の元の機首は左。進行方向（画面下）へ機首を90度回す。
+            bank = 1.5707963f;
+        }
+        // 反転・回転は画像中心を基準とする4頂点で描画する。
+        // DrawSpriteの負倍率と回転を混ぜると原点がずれ、画面端で「尻尾」が残る。
+        const float angle = -bodyLean - bank;
+        const float ca = std::cos(angle), sa = std::sin(angle);
+        const float flipX = faceLeft ? 1.0f : -1.0f;
+        auto vertex = [&](float px, float py) -> Vector2i {
+            px *= flipX;
+            return { static_cast<int>(std::lround(point.x + px * ca - py * sa)),
+                     static_cast<int>(std::lround(point.y + px * sa + py * ca)) };
+            };
+        const float halfW = w * 0.5f, halfH = h * 0.5f;
+        const Vector2i lt = vertex(-halfW, -halfH);
+        const Vector2i rt = vertex(halfW, -halfH);
+        const Vector2i lb = vertex(-halfW, halfH);
+        const Vector2i rb = vertex(halfW, halfH);
+        Novice::DrawQuad(lt.x, lt.y, rt.x, rt.y, lb.x, lb.y, rb.x, rb.y,
+            0, 0, a.width, a.height, a.handle, 0xFFFFFFFF);
     }
-    // 本体装甲は最後まで残し、ほかのパーツの上に重ねる。
-    DrawImagePart(kBreakArt[0], position_, bodyLean, breakHandles[0]);
-    // 目だけは常に一番前に描画。最後に弱点になるが、剥がれたり消えたりしない。
-    DrawImagePart(kAccessoryArt[kAccessoryGripCount - 1], position_, bodyLean,
-        extraHandles[kAccessoryGripCount - 1]);
+    else if (!coasterStage_) {
+        // 背面のパーツから描く。最後に本体と目を置くことで重なりが自然になる。
+        for (int order = 0; order < kAccessoryGripCount - 1; ++order) {
+            const int i = (order == 0 ? 4 : order - 1);
+            if (!accessoryAttached_[i] && detachedAccessoryFrames_[i] <= 0) continue;
+            Vector2 center = position_;
+            float angle = bodyLean;
+            if (!accessoryAttached_[i]) {
+                const float t = 100.0f - detachedAccessoryFrames_[i];
+                center = detachedAccessoryPosition_[i];
+                center.x += (i % 2 == 0 ? -1.0f : 1.0f) * t * 2.1f;
+                center.y += t * 1.3f - t * t * 0.18f;
+                angle = t * (i % 2 == 0 ? -0.05f : 0.05f);
+                if (center.y < -180.0f) continue;
+            }
+            DrawImagePart(kAccessoryArt[i], center, angle, extraHandles[i]);
+        }
+        for (int i = 1; i < BossStage1::kArmorPlates; ++i) {
+            if (i != 0 && !armorAttached_[i] && peeledFrames_[i] <= 0) continue;
+            Vector2 center = position_;
+            float angle = bodyLean;
+            if (i != 0 && !armorAttached_[i]) {
+                const float t = 100.0f - peeledFrames_[i];
+                center = peeledPosition_[i];
+                center.x += (i % 2 == 0 ? -1.0f : 1.0f) * t * 2.3f;
+                center.y += t * 1.8f - t * t * 0.20f;
+                angle = t * (i % 2 == 0 ? -0.045f : 0.045f);
+                if (center.y < -180.0f) continue;
+            }
+            DrawImagePart(kBreakArt[i], center, angle, breakHandles[i]);
+        }
+        // 本体装甲は最後まで残し、ほかのパーツの上に重ねる。
+        DrawImagePart(kBreakArt[0], position_, bodyLean, breakHandles[0]);
+        // 目だけは常に一番前に描画。最後に弱点になるが、剥がれたり消えたりしない。
+        DrawImagePart(kAccessoryArt[kAccessoryGripCount - 1], position_, bodyLean,
+            extraHandles[kAccessoryGripCount - 1]);
+    } // 第1形態の分割パーツ描画終了
+    else {
+        // ステージ2でPNGが無い場合にも第1形態へ戻さず、仮の機体を表示。
+        PortalDraw::RotatedBox(position_, 145.0f, 52.0f, 0.0f, 0xC8D7E8FF);
+    }
     // ボス側のグリップポイントを画像より手前に表示する。
     for (int i = 0; i < kAccessoryGripCount; ++i) {
         if (!IsAccessoryGripEnabled(i)) continue;
@@ -1197,6 +1517,6 @@ void Boss::Draw() const {
         }
     }
     for (const auto& b : bullets_) if (b.active) visual_.DrawBullet(b.position, b.velocity);
-    visual_.DrawFront();
+    if (!coasterStage_) visual_.DrawFront();
     if (IsDefeated()) PortalDraw::Box(position_, 72.0f, 13.0f, 0x777777FF);
 }
