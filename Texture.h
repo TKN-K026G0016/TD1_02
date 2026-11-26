@@ -52,6 +52,12 @@ enum class TextureType {
 	Background2Form2,
 	Background3Form2,
 
+
+	//Effect
+	ParticleTriangle,
+	ParticleCircle,
+	ParticleSquare,
+
 	//UI
 
 	//===============

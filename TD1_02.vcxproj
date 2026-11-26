@@ -191,6 +191,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Boss_coptar.cpp" />
     <ClCompile Include="C:\KamataEngine\Adapter\Novice.cpp" />
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Effect.cpp" />
     <ClCompile Include="ExactPlayerBattle.cpp" />
     <ClCompile Include="ExactPlayerSample.cpp" />
     <ClCompile Include="Input.cpp" />
@@ -257,6 +258,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Editor\Map.h" />
     <ClInclude Include="Editor\stage01.stage.creator_runtime.h" />
     <ClInclude Include="Editor\StageEditor.h" />
+    <ClInclude Include="Effect.h" />
     <ClInclude Include="ExactPlayerBattle.h" />
     <ClInclude Include="ExactPlayerSample.h" />
     <ClInclude Include="FinalTuningEditor.h" />

@@ -68,6 +68,9 @@
     <Filter Include="Player">
       <UniqueIdentifier>{5c00e8a9-85d2-4231-8cdc-3bc978f8c382}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Effect">
+      <UniqueIdentifier>{6431fd30-e6a2-4565-a2e4-70e80b612712}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
@@ -142,6 +145,9 @@
     </ClCompile>
     <ClCompile Include="ExactPlayerBattle.cpp">
       <Filter>Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Effect.cpp">
+      <Filter>Effect</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -351,6 +357,9 @@
     <ClInclude Include="GameHudEditor.h" />
     <ClInclude Include="TileMapEditor.h">
       <Filter>Map</Filter>
+    </ClInclude>
+    <ClInclude Include="Effect.h">
+      <Filter>Effect</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

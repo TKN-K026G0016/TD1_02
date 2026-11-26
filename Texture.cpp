@@ -47,7 +47,14 @@ void InitTexture(void) {
 		{ Novice::LoadTexture("./resources/texture/stage/form2/background_2.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
 		{ Novice::LoadTexture("./resources/texture/stage/form2/background_3.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
 
+		//Effect
+		{ Novice::LoadTexture("./resources/texture/effect/particle/triangle.png"), { 26, 22 }, {0}, 0, 0, WHITE },
+		{ Novice::LoadTexture("./resources/texture/effect/particle/circle.png"), { 256, 256 }, {0}, 0, 0, WHITE },
+		{ Novice::LoadTexture("./resources/texture/effect/particle/square.png"), { 128, 128 }, {0}, 0, 0, WHITE },
+
 		//UI
+
+		
 
 		//===============
 		//Gameover

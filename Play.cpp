@@ -3,6 +3,7 @@
 #include "scene_manager.h"
 #include "Camera.h"
 #include "Stage.h"
+#include "Effect.h"
 #include <Novice.h>
 
 static void Pause(void) {
@@ -14,16 +15,20 @@ static void Pause(void) {
 void InitPlay(void) {
     InitCamera();
     InitStage();
+    InitEffect();
     UpdateCamera(); 
 }
 
 void UpdatePlay(void) {
     Pause();
     UpdateStage();
+    UpdateEffect();
     UpdateCamera(); 
 }
 
 void DrawPlay(void) {
     
     DrawStage();
+    DrawEffectAsObj();
+    DrawEffectAsUI();
 }
