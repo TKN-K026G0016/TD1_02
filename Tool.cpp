@@ -62,8 +62,8 @@ Vector2i ConvertPosWToSUI(Vector2 posW) {
 
 	Vector2 posS = { 0, 0 };
 	// まず通常のスクリーン座標へ変換
-	posS.x = (posW.x + kDelayBetweenWToS.x);
-	posS.y = (-posW.y + kDelayBetweenWToS.y);
+	posS.x = (posW.x /*+ kDelayBetweenWToS.x*/);
+	posS.y = (-posW.y + 720);
 
 	return ConvertVector2(posS);
 }
