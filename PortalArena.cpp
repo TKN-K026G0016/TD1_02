@@ -167,6 +167,11 @@ int PortalArena::MostLooseScrew(float* loosenValue) const {
 void PortalArena::TightenScrew(int index, float perFrame) {
     if (ScrewExists(index))armorTension_.Tighten(index, perFrame);
 }
+
+float PortalArena::GetScrewLoose(int index) const {
+    return armorTension_.Loosen(index);
+}
+
 bool PortalArena::ScrewExists(int index) const {
     if (index >= 0 && index < BossBattleSettings::kArmorHooks)return armorPointEnabled_[index];
     const int extra = index - BossBattleSettings::kArmorHooks;
@@ -177,7 +182,7 @@ Vector2 PortalArena::GetScrewWorldPosition(int index) const {
     const int extra = index - BossBattleSettings::kArmorHooks;
     return extra >= 0 && extra < kExtraBossPoints ? extraPoints_[extra] : Vector2{};
 }
-// Stage 2 only. No changes to sample player movement or tentacle rendering.
+// Stage 2 only. No changes to sample player movement or tentcle rendering.
 void PortalArena::UpdateStage2(Vector2 bossPosition, int bossHp, int bossMaxHp, int specialMode, int specialFrame) {
     if (!coasterStage_) return;
     stage2_.Update(player_.GetPosition(), bossPosition, bossHp, bossMaxHp,
@@ -186,3 +191,4 @@ void PortalArena::UpdateStage2(Vector2 bossPosition, int bossHp, int bossMaxHp, 
 int PortalArena::Stage2HitPlayer(Vector2 player, Vector2* source) {
     return coasterStage_ ? stage2_.CheckHit(player, 24.0f, source) : 0;
 }
+

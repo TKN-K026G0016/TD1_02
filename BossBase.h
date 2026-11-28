@@ -7,6 +7,7 @@
 #include "BossVisualEffect.h"
 #include "BossStage1Tuning.h"
 #include "BossBattleSettings.h"
+#include "PortalArena.h"
 
 // 第1ステージの行動AI。本体・プロペラ・ジェット・パイプ・目を分割画像で描画する。
 // StageがBossの実体を所有し、Player座標への読み取り専用ポインタを渡す。
@@ -40,8 +41,8 @@ public:
 	//テクスチャの取得
 	void LoadTexture(void) const;
 	//描画処理
-	void Draw() const;
-	void DrawBolts() const;
+	void Draw(const PortalArena& arena) const;
+	void DrawBolts(const PortalArena& arena) const;
 
 	// グラップルの綱も外装剥がしに使う。第2引数はその判定。
 	// 戻り値: このフレームにダメージ/外装ヒットが成立したらtrue。

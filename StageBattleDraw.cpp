@@ -32,7 +32,8 @@ void StageBattle::Draw() {
     TileMapEditor::DrawWorld(int(GetStageId()));
     MiniUnityEditor::DrawWorld(int(GetStageId()), 0);
     // 【注目】【描画順②】ボスはプレイヤーより後ろに描く。
-    battleContext.boss.Draw();
+    battleContext.boss.Draw(battleContext.arena);
+
     if (!(battleContext.boss.IsCoasterStage() && Stage2::IsBossOffscreen(battleContext.boss)) &&
         battleContext.boss.IsRepairingScrew() && battleContext.arena.ScrewExists(battleContext.boss.RepairScrewIndex())) {
         // 既存のボス絵に重ねる軽量な巻き直し演出。新しいPNGは不要。

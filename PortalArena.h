@@ -31,6 +31,8 @@ public:
     void TestStage2Cutter() { stage2_.TestCutter(); }
     int MostLooseScrew(float* loosenValue = nullptr) const;
     void TightenScrew(int index, float perFrame);
+    float GetScrewLoose(int index) const;
+
     Vector2 GetScrewWorldPosition(int index) const;
     bool ScrewExists(int index) const;
     PortalPlayer& GetPlayer() { return player_; }

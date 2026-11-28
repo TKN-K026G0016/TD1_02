@@ -9,6 +9,7 @@
 #include <cstring>
 #include <Novice.h>
 #include "BossHelpers.h"
+#include "PortalArena.h"
 using namespace BossHelpers;
 using PortalMath::Clamp;
 using PortalMath::Abs;
@@ -68,13 +69,16 @@ void Boss::LoadTexture(void) const {
 /// <summary>
 /// ネジの描画処理
 /// </summary>
-void Boss::DrawBolts(void) const {
+void Boss::DrawBolts(const PortalArena& arena) const {
     for (int i = 0; i < kAccessoryGripCount; ++i) {
         if (!IsAccessoryGripEnabled(i)) continue;
         DrawTextureAsObj(boltTexture, GetAccessoryGripPoint(i), { 32,32 }, 0.0f, false);
 
         //ゆるみ度ゲージ
-        float gaugeRate = 0.0f;
+
+        const int screwIndex = BossBattleSettings::kArmorHooks + i;
+
+        float gaugeRate = arena.GetScrewLoose(screwIndex);
         DrawGaugeYAsObj(boltMeterTexture, GetAccessoryGripPoint(i), { 32, 32 }, gaugeRate);
     }
 
@@ -84,7 +88,7 @@ void Boss::DrawBolts(void) const {
         DrawTextureAsObj(boltTexture, GetArmorGripPoint(i), { 32,32 }, 0.0f, false);
 
         //ゆるみ度ゲージ
-        float gaugeRate = 0.0f;
+        float gaugeRate = arena.GetScrewLoose(i);
         DrawGaugeYAsObj(boltMeterTexture, GetArmorGripPoint(i), { 32, 32 }, gaugeRate);
     }
 }
@@ -92,7 +96,7 @@ void Boss::DrawBolts(void) const {
 /// <summary>
 /// 描画処理
 /// </summary>
-void Boss::Draw() const {
+void Boss::Draw(const PortalArena& arena) const {
     // ステージ2の退場飛行。画面端に旧VFXや尻尾が残らないよう、
     // 機体の中心が退場したらボスの描画一式を停止する。
     // 攻撃予兆は機体が場外でも表示する。機体・GPだけを場外で非表示にする。
@@ -208,7 +212,7 @@ void Boss::Draw() const {
     }
 
     //ネジの描画
-    DrawBolts();
+    DrawBolts(arena);
 
     //// ボス側のグリップポイントを画像より手前に表示する。
     //for (int i = 0; i < kAccessoryGripCount; ++i) {
