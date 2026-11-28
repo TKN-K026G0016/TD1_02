@@ -217,6 +217,53 @@ void DrawGaugeAsObj(Texture texture, Vector2 centerPos, Vector2 size, float rate
 }
 
 /// <summary>
+/// 縦ゲージの描画処理(Obj)
+/// </summary>
+/// <param name="texture">テクスチャデータ</param>
+/// <param name="centerPos">中心座標</param>
+/// <param name="size">サイズ</param>
+/// <param name="rate">ゲージの割合</param>
+void DrawGaugeYAsObj(Texture texture, Vector2 centerPos, Vector2 size, float rate) {
+	if (rate <= 0.0f) return;
+
+	//割合に補正を掛ける
+	rate = std::clamp(rate, 0.0f, 1.0f);
+	float gaugeHeight = size.y * rate;
+	int gaugeRefHeight = ToInt(texture.refSize.y * rate);
+
+	//ワールド行列作成
+	Matrix3x3 worldMatrix = MakeWorldMatrix({ 1.0f,1.0f }, 0.0f, centerPos);
+	Matrix3x3 wvpVpMatrix = Multiply(worldMatrix, GetWorldToScreenMatrix());
+
+	Vector2 localVertex[kVertexNum] = {};
+	Vector2 vertexW[kVertexNum] = {};
+	Vector2i vertexS[kVertexNum] = {};
+
+	//ローカル座標作成
+	SetVertex({0, 0}, size, 0.0f, localVertex);
+	// 上側の頂点を rate に合わせて y 座標更新
+	// vertexW[0] = 左上, vertexW[1] = 右上
+	localVertex[0].y = localVertex[2].y + gaugeHeight;  // 左上
+	localVertex[1].y = localVertex[3].y + gaugeHeight;  // 右上
+
+	for (int i = 0; i < kVertexNum; i++) {
+		//ワールド座標作成
+		vertexW[i] = Transform(localVertex[i], wvpVpMatrix);
+		//スクリーン座標に変更
+		vertexS[i] = ConvertVector2(vertexW[i]);
+	}
+
+	Novice::DrawQuad(
+		vertexS[2].x, vertexS[2].y,
+		vertexS[3].x, vertexS[3].y,
+		vertexS[0].x, vertexS[0].y,
+		vertexS[1].x, vertexS[1].y,
+		texture.refSize.x * texture.animNum, 0, texture.refSize.x, gaugeRefHeight,
+		texture.tHandle, texture.color
+	);
+}
+
+/// <summary>
 /// ゲージの描画処理(HUD)
 /// </summary>
 /// <param name="texture">テクスチャデータ</param>
@@ -256,6 +303,43 @@ void DrawGaugeAsUI(Texture texture, Vector2 centerPos, Vector2 size, float rate)
 		vertexS[2].x, vertexS[2].y,
 		vertexS[3].x, vertexS[3].y,
 		texture.refSize.x * texture.animNum, 0, gaugeRefWidth, texture.refSize.y,
+		texture.tHandle, texture.color
+	);
+}
+
+/// <summary>
+/// 縦ゲージの描画処理(UI)
+/// </summary>
+/// <param name="texture">テクスチャデータ</param>
+/// <param name="centerPos">中心座標</param>
+/// <param name="size">サイズ</param>
+/// <param name="rate">ゲージの割合</param>
+void DrawGaugeYAsUI(Texture texture, Vector2 centerPos, Vector2 size, float rate) {
+	//割合に補正を掛ける
+	rate = std::clamp(rate, 0.0f, 1.0f);
+	float gaugeHeight = size.y * rate;
+	int gaugeRefHeight = ToInt(texture.refSize.y * rate);
+
+	Vector2 vertexW[kVertexNum] = {};
+	Vector2i vertexS[kVertexNum] = {};
+
+	SetVertex(centerPos, size, 0.0f, vertexW);
+
+	// 上側の頂点を rate に合わせて y 座標更新
+	// vertexW[0] = 左上, vertexW[1] = 右上
+	vertexW[0].y = vertexW[2].y + gaugeHeight;  // 左上
+	vertexW[1].y = vertexW[3].y + gaugeHeight;  // 右上
+
+	for (int i = 0; i < kVertexNum; i++) {
+		vertexS[i] = ConvertPosWToSUI(vertexW[i]);
+	}
+
+	Novice::DrawQuad(
+		vertexS[2].x, vertexS[2].y,
+		vertexS[3].x, vertexS[3].y,
+		vertexS[0].x, vertexS[0].y,
+		vertexS[1].x, vertexS[1].y,
+		texture.refSize.x * texture.animNum, 0, texture.refSize.x, gaugeRefHeight,
 		texture.tHandle, texture.color
 	);
 }

@@ -107,7 +107,10 @@ Texture GetTexture(TextureType type);
 void DrawTextureAsObj(Texture texture, Vector2 pos, Vector2 size, float rotateTheta, bool reverseSwitch);
 void DrawTextureAsUI(Texture texture, Vector2 pos, Vector2 size, float rotateTheta);
 
+
 void DrawGaugeAsObj(Texture texture, Vector2 centerPos, Vector2 size, float rate);
+void DrawGaugeYAsObj(Texture texture, Vector2 centerPos, Vector2 size, float rate);
 void DrawGaugeAsUI(Texture texture, Vector2 centerPos, Vector2 size, float rate);
+void DrawGaugeYAsUI(Texture texture, Vector2 centerPos, Vector2 size, float rate);
 
 void UpdateAnimation(Texture& texture);

@@ -72,12 +72,20 @@ void Boss::DrawBolts(void) const {
     for (int i = 0; i < kAccessoryGripCount; ++i) {
         if (!IsAccessoryGripEnabled(i)) continue;
         DrawTextureAsObj(boltTexture, GetAccessoryGripPoint(i), { 32,32 }, 0.0f, false);
+
+        //ゆるみ度ゲージ
+        float gaugeRate = 0.0f;
+        DrawGaugeYAsObj(boltMeterTexture, GetAccessoryGripPoint(i), { 32, 32 }, gaugeRate);
     }
 
     for (int i = 0; i < BossStage1::kArmorPlates; ++i) {
         if (!IsArmorAttached(i)) continue;
 
         DrawTextureAsObj(boltTexture, GetArmorGripPoint(i), { 32,32 }, 0.0f, false);
+
+        //ゆるみ度ゲージ
+        float gaugeRate = 0.0f;
+        DrawGaugeYAsObj(boltMeterTexture, GetArmorGripPoint(i), { 32, 32 }, gaugeRate);
     }
 }
 
