@@ -17,8 +17,8 @@ using PortalMath::Approach;
 
 #pragma region データ: テクスチャ
 
-static Texture boltTexture = GetTexture(TextureType::Bolt);
-static Texture boltMeterTexture = GetTexture(TextureType::BoltMeter);
+static Texture boltTexture = {};
+static Texture boltMeterTexture = {};
 
 #pragma endregion
 
@@ -58,11 +58,17 @@ namespace {
 }
 
 /// <summary>
+/// テクスチャの取得
+/// </summary>
+void Boss::LoadTexture(void) const {
+    boltTexture = GetTexture(TextureType::Bolt);
+    boltMeterTexture = GetTexture(TextureType::BoltMeter);
+}
+
+/// <summary>
 /// ネジの描画処理
 /// </summary>
 void Boss::DrawBolts(void) const {
-    boltTexture = GetTexture(TextureType::Bolt);
-
     for (int i = 0; i < kAccessoryGripCount; ++i) {
         if (!IsAccessoryGripEnabled(i)) continue;
         DrawTextureAsObj(boltTexture, GetAccessoryGripPoint(i), { 32,32 }, 0.0f, false);

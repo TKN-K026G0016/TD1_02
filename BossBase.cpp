@@ -61,6 +61,8 @@ void Boss::Initialize(Vector2 spawnPos) {
     for (auto& b : bullets_) b = {};
     visual_.Initialize(spawnPos, BossStage1::kFloorY);
     ChangeState(BossState::Idle);
+
+    LoadTexture();
 }
 // ボスが狙うプレイヤー位置の参照先を保存する。ポインタ先の寿命に注意。
 void Boss::SetTarget(const Vector2* playerPosition) { targetPosition_ = playerPosition; }

@@ -37,6 +37,8 @@ public:
 	bool IsRepairingScrew() const { return state_ == BossState::ScrewRepair; }
 	int RepairScrewIndex() const { return repairingScrew_; }
 
+	//テクスチャの取得
+	void LoadTexture(void) const;
 	//描画処理
 	void Draw() const;
 	void DrawBolts() const;
