@@ -32,7 +32,7 @@ struct BGMFader {
 	float fadeSpeed = 0.01f;
 	float fadeOutSpeed = 0.005f;
 
-	Timer waitPlayTimer{120};
+	Timer waitPlayTimer{ 120 };
 };
 BGMFader bgmFader;
 
@@ -42,7 +42,8 @@ static void BgmFade(void) {
 		if (bgmVolume > 0.0f) {
 			bgmVolume -= bgmFader.fadeOutSpeed;
 			Novice::SetAudioVolume(playHandle, bgmVolume * bgms[ToInt(currentType)].volume);
-		} else {
+		}
+		else {
 			bgmVolume = bgmVolumeMax;
 			PlayBgm(BgmType::None);
 
@@ -54,7 +55,8 @@ static void BgmFade(void) {
 		if (bgmVolume > 0.0f) {
 			bgmVolume -= bgmFader.fadeSpeed;
 			Novice::SetAudioVolume(playHandle, bgmVolume * bgms[ToInt(currentType)].volume);
-		} else {
+		}
+		else {
 			//しばらく時間をおく
 			bgmFader.waitPlayTimer.CountUp();
 			if (bgmFader.waitPlayTimer.IsReady()) {
@@ -76,7 +78,7 @@ void InitBgm(void) {
 		{0, 0.0f},
 
 		//sample
-		{Novice::LoadAudio("./NoviceResources/mokugyo.wav"), 1.0f},
+		{Novice::LoadAudio("./resources/common/mokugyo.wav"), 1.0f},
 	};
 
 	memcpy(bgms, temp, sizeof(bgms));

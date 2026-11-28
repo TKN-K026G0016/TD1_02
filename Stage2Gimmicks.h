@@ -193,7 +193,7 @@ public:
     }
 private:
     struct Missile { Vector2 position = {}, velocity = {};int life = 0, age = 0;bool active = false; };
-    static float Dist2(Vector2 a, Vector2 b) { const float x = a.x - b.x, y = a.y - b.y;return x * x + y * y; }
+    static float Dist2(Vector2 a, Vector2 b) { return PortalMath::Dist2(a, b); }
     static float Min(float a, float b) { return a < b ? a : b; }
     Vector2 CutterPosition() const {
         const float t = static_cast<float>(specialFrame_ - 40) /

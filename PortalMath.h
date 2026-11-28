@@ -2,6 +2,14 @@
 #include "Vector2.h"
 #include <cmath>
 namespace PortalMath {
+	inline float Abs(float value) { return value < 0.0f ? -value : value; }
+	inline float Approach(float a, float b, float step) {
+		return a < b ? (a + step > b ? b : a + step) : (a - step < b ? b : a - step);
+	}
+	inline float Dist2(Vector2 a, Vector2 b) {
+		const float x = a.x - b.x, y = a.y - b.y;
+		return x * x + y * y;
+	}
 	inline Vector2 Add(Vector2 a, Vector2 b) { return { a.x + b.x,a.y + b.y }; }
 	inline Vector2 Sub(Vector2 a, Vector2 b) { return { a.x - b.x,a.y - b.y }; }
 	inline Vector2 Mul(Vector2 a, float b) { return { a.x * b,a.y * b }; }
