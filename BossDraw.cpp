@@ -176,8 +176,8 @@ void Boss::Draw() const {
     for (int i = 0; i < kAccessoryGripCount; ++i) {
         if (!IsAccessoryGripEnabled(i)) continue;
         const Vector2 point = GetAccessoryGripPoint(i);
-        PortalDraw::Box(point, 11.0f, 3.0f, 0xC6ECFFFF);
-        PortalDraw::Box(point, 3.0f, 11.0f, 0xC6ECFFFF);
+        //PortalDraw::Box(point, 11.0f, 3.0f, 0xC6ECFFFF);
+        //PortalDraw::Box(point, 3.0f, 11.0f, 0xC6ECFFFF);
 
         boltTexture = GetTexture(TextureType::Bolt);
         DrawTextureAsObj(boltTexture, point, { 32, 32 }, 0.0f, false);
@@ -205,12 +205,14 @@ void Boss::Draw() const {
         if (IsArmorAttached(i)) {
             const Vector2 p = GetArmorGripPoint(i);
             // 本体のポイントは移動用。プロペラだけが外れる。
-            const float tension = i == armorStrainPlate_ ? armorStrain_ : 0.0f;
-            PortalDraw::RotatedBox({ p.x,p.y - 6.0f + tension * 4.0f },
-                34.0f + tension * 12.0f, 16.0f - tension * 4.0f,
-                tension * (i == 0 ? -0.24f : 0.24f), tension > 0.55f ? 0xFFF0B0FF : 0xA7B1C1FF);
-            PortalDraw::Box(p, 13.0f, 3.0f, 0xFFE16AFF);
-            PortalDraw::Box(p, 3.0f, 13.0f, 0xFFE16AFF);
+            //const float tension = i == armorStrainPlate_ ? armorStrain_ : 0.0f;
+            //PortalDraw::RotatedBox({ p.x,p.y - 6.0f + tension * 4.0f },
+            //    34.0f + tension * 12.0f, 16.0f - tension * 4.0f,
+            //    tension * (i == 0 ? -0.24f : 0.24f), tension > 0.55f ? 0xFFF0B0FF : 0xA7B1C1FF);
+            //PortalDraw::Box(p, 13.0f, 3.0f, 0xFFE16AFF);
+            //PortalDraw::Box(p, 3.0f, 13.0f, 0xFFE16AFF);
+
+            DrawTextureAsObj(boltTexture, p, { 32, 32 }, 0.0f, false);
         }
 
     }
