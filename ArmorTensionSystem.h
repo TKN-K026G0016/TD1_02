@@ -3,6 +3,8 @@
 #include "BossCombatEditorSettings.h"
 #include <cmath>
 
+#include "Effect.h"
+
 // Boss-side armor mechanics. The sample player remains responsible for
 // physics, two-arm grappling and its 96-segment tentacle rendering.
 class ArmorTensionSystem {
@@ -41,9 +43,20 @@ public:
                 const float rate = span > 0.001f ? Clamp01((distance - tuning.hitMinDistance) / span) : 1.0f;
                 const float gain = tuning.hitMinLoosen +
                     (tuning.hitMaxLoosen - tuning.hitMinLoosen) * rate;
+
+                //===================
+                //ゆるみ度が上昇する処理
+                //===================
                 loosen_[part] = Clamp01(loosen_[part] + gain);
                 displayTarget_ = part;
                 hitCooldown_[part] = tuning.hitCooldownFrames;
+                //エフェクト生成
+                Vector2 screwPosition = gripPoints[grip];
+                CreateWindScrewEffect(screwPosition, TypeDrawEffect::UI);
+
+                //===================
+                //ゆるませでの破壊処理
+                //===================
                 // 緩ませだけでネジを外す。接続したこのフレームに一度だけ発動。
                 // 本体(0)と目(最終番号)は破壊対象ではない。
                 if (tuning.loosenAutoPeelEnabled &&
