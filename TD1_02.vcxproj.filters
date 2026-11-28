@@ -53,23 +53,23 @@
     <Filter Include="Player">
       <UniqueIdentifier>{5c00e8a9-85d2-4231-8cdc-3bc978f8c382}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Stage\Scene">
-      <UniqueIdentifier>{ed5fed5e-4f34-4858-92aa-f969005b3333}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Stage\Scene\Pause">
-      <UniqueIdentifier>{3ad5c849-ce05-4084-96f4-35e69f8cf517}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Stage\Scene\Play">
-      <UniqueIdentifier>{05d9205c-1096-4002-9c97-bf86405fd362}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Stage\Scene\Scene_Manager">
-      <UniqueIdentifier>{fbc06b48-4fa9-4e46-ba03-225e4011e37c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Stage\Scene\Title">
-      <UniqueIdentifier>{130a00a2-709c-483d-b7ee-60423b7c294f}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Effect">
       <UniqueIdentifier>{6431fd30-e6a2-4565-a2e4-70e80b612712}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene">
+      <UniqueIdentifier>{ed5fed5e-4f34-4858-92aa-f969005b3333}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Pause">
+      <UniqueIdentifier>{3ad5c849-ce05-4084-96f4-35e69f8cf517}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Play">
+      <UniqueIdentifier>{05d9205c-1096-4002-9c97-bf86405fd362}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Scene_Manager">
+      <UniqueIdentifier>{fbc06b48-4fa9-4e46-ba03-225e4011e37c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Scene\Title">
+      <UniqueIdentifier>{130a00a2-709c-483d-b7ee-60423b7c294f}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -84,16 +84,16 @@
       <Filter>Audio\Se</Filter>
     </ClCompile>
     <ClCompile Include="Pause.cpp">
-      <Filter>Stage\Scene\Pause</Filter>
+      <Filter>Scene\Pause</Filter>
     </ClCompile>
     <ClCompile Include="Play.cpp">
-      <Filter>Stage\Scene\Play</Filter>
+      <Filter>Scene\Play</Filter>
     </ClCompile>
     <ClCompile Include="Scene_Manager.cpp">
-      <Filter>Stage\Scene\Scene_Manager</Filter>
+      <Filter>Scene\Scene_Manager</Filter>
     </ClCompile>
     <ClCompile Include="Title.cpp">
-      <Filter>Stage\Scene\Title</Filter>
+      <Filter>Scene\Title</Filter>
     </ClCompile>
     <ClCompile Include="Input.cpp">
       <Filter>Input</Filter>
@@ -283,16 +283,16 @@
       <Filter>Audio\Se</Filter>
     </ClInclude>
     <ClInclude Include="Pause.h">
-      <Filter>Stage\Scene\Pause</Filter>
+      <Filter>Scene\Pause</Filter>
     </ClInclude>
     <ClInclude Include="Play.h">
-      <Filter>Stage\Scene\Play</Filter>
+      <Filter>Scene\Play</Filter>
     </ClInclude>
     <ClInclude Include="Scene_Manager.h">
-      <Filter>Stage\Scene\Scene_Manager</Filter>
+      <Filter>Scene\Scene_Manager</Filter>
     </ClInclude>
     <ClInclude Include="Title.h">
-      <Filter>Stage\Scene\Title</Filter>
+      <Filter>Scene\Title</Filter>
     </ClInclude>
     <ClInclude Include="Input.h">
       <Filter>Input</Filter>

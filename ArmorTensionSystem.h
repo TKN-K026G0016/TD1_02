@@ -71,18 +71,32 @@ public:
             previousGrip_[h] = grip;
         }
         const int target = snap.yankTarget - fixedCount;
+
+
+
         // yankTarget はプレイヤー側で「背景GPの巻き取り中、ボス側の
         // 触手が限界まで張った瞬間」にのみ発行される。
         // 接続だけでは剥がれず、張力を発生させる必要がある。
-        if (BossCombatEditor::values.twoGripPeelEnabled &&
-            snap.yankTarget >= fixedCount && target > 0 &&
-            target < partCount - 1 && target < kMaxParts) {
+        if (BossCombatEditor::values.twoGripPeelEnabled 
+            && snap.yankTarget >= fixedCount && target > 0 && target < partCount - 1 && target < kMaxParts 
+            && gripPoints && snap.yankTarget < gripPointCount) {
             displayTarget_ = target;
             lastGap_ = snap.yankGap;
             const bool enough = snap.yankGap >= RequiredTension(target);
             success_ = enough;
             resultFrames_ = 60;
-            if (enough) return target;
+
+            //===================
+            //引き剝がしでの破壊処理
+            //===================
+            if (enough) { 
+                //Effect生成
+                Vector2 screwPosition = gripPoints[snap.yankTarget];
+                CreatePeelOffEffect(screwPosition, TypeDrawEffect::Obj);
+                CreatePeelOffBackground();
+                
+                return target; 
+            }
         }
         return -1;
     }

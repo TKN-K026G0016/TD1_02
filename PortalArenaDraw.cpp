@@ -5,7 +5,10 @@
 #include "MiniUnityEditor.h"
 #include "PortalDraw.h"
 #include "PortalMath.h"
+
 #include "Texture.h"
+#include "Effect.h"
+
 #include <Novice.h>
 #include <cmath>
 using namespace PortalMath;
@@ -103,6 +106,9 @@ void PortalArena::DrawWorld() const {
         //DrawTextureAsObj(bg3Stage2Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
 
         DrawTextureAsObj(bgForm1Texture, { 640, 360 }, { 1280, 720 }, 0.0f, false);
+
+        //背景エフェクト
+        DrawEffectAsBG();
 
 #pragma endregion
 

@@ -147,3 +147,6 @@ void CreatePeelOffBackground(void);
 void CreateExplosionEffect(Vector2 pos, TypeDrawEffect typeDraw);
 void CreateWindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw);
 void CreatePeelOffEffect(Vector2 pos, TypeDrawEffect typeDraw);
+
+void TriggerHitStopEffect(int time);
+bool GetIsHitStop(void);

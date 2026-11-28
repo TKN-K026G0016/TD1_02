@@ -116,6 +116,20 @@ static DataPeelOffEffect dataPeelOffEffect;
 
 #pragma endregion
 
+#pragma region データ: HitStopEffect
+
+struct HitStopEffect {
+	int time = 0;
+	int count = 0;
+
+	int basicTime = 10;
+
+	bool isHitStop = false;
+};
+static HitStopEffect hitStopEffect;
+
+#pragma endregion
+
 #pragma region 宣言: 関数
 
 static void InitTriangleEffect(void);
@@ -141,6 +155,9 @@ static void InitExplosionEffect(void);
 static void InitWindScrewEffect(void);
 static void InitPeelOffEffect(void);
 
+static void InitHitStop(void);
+static void UpdateHitStop(void);
+
 #pragma endregion
 
 void InitEffect(void) {
@@ -152,6 +169,8 @@ void InitEffect(void) {
 	InitExplosionEffect();
 	InitWindScrewEffect();
 	InitPeelOffEffect();
+
+	InitHitStop();
 }
 
 void UpdateEffect(void) {
@@ -160,6 +179,8 @@ void UpdateEffect(void) {
 	UpdatePeelOffBackground();
 
 	UpdateAnimEffect();
+
+	UpdateHitStop();
 }
 
 void DrawEffectAsBG(void) {
@@ -710,6 +731,50 @@ static void InitPeelOffEffect(void) {
 /// <param name="typeDraw">表示タイプ</param>
 void CreatePeelOffEffect(Vector2 pos, TypeDrawEffect typeDraw) {
 	animEffects.push_back(AnimEffect(pos, dataPeelOffEffect.texture, dataPeelOffEffect.size, typeDraw));
+}
+
+#pragma endregion
+
+#pragma region 関数: HitStopEffect
+
+static void InitHitStop(void) {
+	hitStopEffect.time = 0;
+	hitStopEffect.count = 0;
+}
+
+static void UpdateHitStop(void) {
+	if (!hitStopEffect.isHitStop) return;
+
+	hitStopEffect.count++;
+	if (hitStopEffect.count >= hitStopEffect.time) {
+		hitStopEffect.time = 0;
+		hitStopEffect.count = 0;
+		hitStopEffect.isHitStop = false;
+	}
+
+}
+
+/// <summary>
+/// ヒットストップ発生処理
+/// </summary>
+/// <param name="time">持続時間</param>
+void TriggerHitStopEffect(int time) {
+	hitStopEffect.isHitStop = true;
+
+	if (time <= 0) {
+		time = hitStopEffect.basicTime;
+	}
+
+	hitStopEffect.time = time;
+	hitStopEffect.count = 0;
+}
+
+/// <summary>
+/// HitStop状態化の確認処理
+/// </summary>
+/// <returns>hitStopEffect.isHitStop</returns>
+bool GetIsHitStop(void) {
+	return hitStopEffect.isHitStop;
 }
 
 #pragma endregion

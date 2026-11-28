@@ -123,6 +123,8 @@ void UpdateCamera(void) {
     else {
         camera.shakeOffset = {};
     }
+
+
     UpdateWorldToScreenMatrix();
 }
 

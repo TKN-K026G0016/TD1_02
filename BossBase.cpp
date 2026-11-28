@@ -20,7 +20,13 @@ using PortalMath::Approach;
 #include <Novice.h>
 
 
+#pragma region データ: CameraShake
 
+//外装引き剝がし時の振動の強さ
+static constexpr float kShakePowWhileBreakArmor = 10.0f;
+static constexpr int kShakeTimeWhileBreakArmor = 20;
+
+#pragma endregion
 
 // オブジェクトを使い始めるときに値を初期状態へ戻す。リトライ時にも重要。
 void Boss::Initialize(Vector2 spawnPos) {
@@ -109,7 +115,9 @@ bool Boss::TryPeelAccessory(int index) {
     detachedAccessoryPosition_[index] = position_;
     detachedAccessoryFrames_[index] = 100;
     hitstop_ = 3;
-    ShakeCamera(2.5f, 4);
+
+    ShakeCamera(kShakePowWhileBreakArmor, kShakeTimeWhileBreakArmor);
+
     // ジェット・パイプをすべて外しても墜落しない。
     // 次はプロペラ3本を外す段階になる。
     return true;
@@ -133,7 +141,9 @@ bool Boss::TryPeelArmor(int plate) {
     peeledPosition_[plate] = position_; // 離脱時の本体位置を固定。落ちる部品だけ移動する
     peeledFrames_[plate] = 100; // 落下が視認できるよう1秒以上表示する
     hitstop_ = 3;
-    ShakeCamera(2.5f, 4);
+
+
+    ShakeCamera(kShakePowWhileBreakArmor, kShakeTimeWhileBreakArmor);
     if (armorPlates_ == 0 && AllAccessoriesRemoved()) {
         // ジェット・パイプ → プロペラ3本を外し終えたら墜落スタン。
         ChangeState(BossState::ArmorCurl);

@@ -4,6 +4,9 @@
 #include "Stage1.h"
 #include "Stage2.h"
 #include "CloudStage.h"
+
+#include "Effect.h"
+
 #include <Novice.h>
 #include <dinput.h>
 
@@ -31,6 +34,8 @@ void InitStage() {
 }
 
 void UpdateStage() {
+    if (GetIsHitStop()) return;
+
     char liveKeys[256] = {};
     Novice::GetHitKeyStateAll(liveKeys);
     StageBattle::UpdateShortcuts(liveKeys);

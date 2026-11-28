@@ -16,7 +16,7 @@ void InitPlay(void) {
     InitCamera();
     InitStage();
     InitEffect();
-    UpdateCamera(); 
+    //UpdateCamera(); 
 }
 
 void UpdatePlay(void) {
@@ -29,7 +29,6 @@ void UpdatePlay(void) {
 void DrawPlay(void) {
     
     DrawStage();
-    DrawEffectAsBG();
     DrawEffectAsObj();
 
     DrawEffectAsUI();

@@ -29,6 +29,8 @@
 #include "CreatorGameRuntime.h"
 #include "GameHudEditor.h"
 
+#include "Effect.h"
+
 // ================================================================
 // 【第1ステージ】「突進の予兆→ワイヤー回避→失速時に反撃→外装/コアを破壊」。
 // 現在は左スティックで移動、右スティックで8方向触手攻撃。Jはキーボード用。AIはBoss、プレイヤーはPortalArenaが管理。
@@ -116,6 +118,8 @@ static void SyncBossGripTargets(bool bossOffscreen) {
 }
 
 void StageBattle::Update(const char* liveKeys) {
+    if (GetIsHitStop()) return;
+
     const bool f8Now = liveKeys[DIK_F8] != 0;
     if (f8Now && !battleContext.f8Prev) {
         PlayerTuning::Load(PlayerTuningFilePath().c_str());
@@ -218,6 +222,10 @@ void StageBattle::Update(const char* liveKeys) {
         else
             removed = battleContext.boss.TryPeelAccessory(peelRequest - BossStage1::kArmorPlates);
         if (removed) {
+
+            //ヒットストップ発生
+            TriggerHitStopEffect(0);
+
             battleContext.arena.NotifyArmorPeeled(peelRequest);
             player.OnArmorPeeled();
         }
