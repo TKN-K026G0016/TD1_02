@@ -20,7 +20,7 @@ void InitTexture(void) {
 		//===============
 		//Title
 		//===============
-		{ Novice::LoadTexture("./NoviceResources/white1x1.png"), { 1, 1 }, {0}, 0, 0, WHITE },
+		{ Novice::LoadTexture("./resources/common/white1x1.png"), { 1, 1 }, {0}, 0, 0, WHITE },
 
 		//===============
 		//Title

@@ -3,6 +3,7 @@
 #include "BossBattleSettings.h"
 #include "Stage2Gimmicks.h"
 #include "ArmorTensionSystem.h"
+#include "Texture.h"
 
 // 第1ステージ：画面固定の回避アリーナ。
 // ワイヤーで「高い出口に登る」のではなく「突進の攻撃ラインから脱出」する。
@@ -44,6 +45,13 @@ public:
     static constexpr int kExtraBossPoints = 6;
     void SetBossExtraTargets(const Vector2 points[kExtraBossPoints], const bool enabled[kExtraBossPoints]);
 private:
+    int ActiveAnchorCount() const;
+    Vector2 AnchorPosition(int index) const;
+    int CollectSceneGrips(Vector2* grips, int capacity) const;
+    Texture bgForm1Texture;
+    Texture bg1Form2Texture;
+    Texture bg2Form2Texture;
+    Texture bg3Form2Texture;
     // 【混雑解消】4個→3個。両端＋中央上で、それぞれ離れた回避ルートを作る。
     static constexpr int kMaxAnchors = BossBattleSettings::kMaxAnchors;
     int anchorCount_ = 6;

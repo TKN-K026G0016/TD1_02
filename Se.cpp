@@ -20,7 +20,7 @@ float seVolume = 1.0f;
 void InitSe(void) {
 	SE temp[ToInt(SeType::Count)] = {
 		//Sample
-		{Novice::LoadAudio("./NoviceResources/fanfare.wav"), 1.0f},
+		{Novice::LoadAudio("./resources/common/fanfare.wav"), 1.0f},
 	};
 
 	memcpy(ses, temp, sizeof(ses));
@@ -59,7 +59,8 @@ bool CheckIsPlayingSe(SeType type) {
 	//再生中であれば
 	if (Novice::IsPlayingAudio(ses[ToInt(type)].pHandle) == 1) {
 		return true;
-	} else {
+	}
+	else {
 		return false;
 	}
 }

@@ -1,4 +1,4 @@
-// 【このファイルの役割】Boss_coptar.h — コプターの状態と対外API
+// 【このファイルの役割】BossBase.h — ステージ1・2共通のボス状態と対外API
 // ボスのHP、位置、行動状態、外装、飛び道具などを宣言する。
 // ============================================================================
 
@@ -105,6 +105,8 @@ public:
 	int GetNormalCombo() const { return normalComboHits_; }
 
 private:
+	void DrawCopterArt(float bodyLean) const;
+	void DrawCoasterArt(float bodyLean) const;
 	enum class PressPhase { Align, Charge, Dive, Impact, Stun, Return };
 	struct Bullet {
 		Vector2 position = {}, velocity = {};
@@ -194,13 +196,22 @@ private:
 	int topElapsed_ = 0;
 
 
-	void UpdateFlight(); // 予兆・攻撃以外の空中移動
+	void UpdateFlight();
+	void UpdateFlightStage1();
+	void UpdateFlightStage2(); // 予兆・攻撃以外の空中移動
 	void ChangeState(BossState next);
 	void BeginArmorRebuild();
 
 	void ChangePressPhase(PressPhase next);
 	void ChooseAttack();
+	void ChooseAttackStage1();
+	void ChooseAttackStage2();
 	void UpdatePress();
+	void UpdatePressStage1();
+	void UpdatePressStage2();
+	void UpdateRushStage1();
+	void UpdateRushStage2();
+	void UpdateStage2Special();
 	void UpdateToy();
 	void Shoot(int spreadIndex = 0);
 	void UpdateBullets();
