@@ -54,6 +54,8 @@ void InitTexture(void) {
 
 		{ Novice::LoadTexture("./resources/texture/effect/explosion_effect.png"), { 128, 128 }, {3}, 7, 0, WHITE },
 		{ Novice::LoadTexture("./resources/texture/effect/wind_screw_effect.png"), { 128, 128 }, {2}, 10, 0, WHITE },
+		{ Novice::LoadTexture("./resources/texture/effect/peel_off_effect.png"), { 256, 256 }, {3}, 5, 0, WHITE },
+		{ Novice::LoadTexture("./resources/texture/effect/peel_off_background.png"), { 1280, 720 }, {0}, 0, 0, WHITE },
 
 		//UI
 

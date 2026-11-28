@@ -18,7 +18,7 @@ void UpdateTitle(void) {
 
 		ChangeModeFade(ModeFade::FadeOut);
 		ChangeFadeTarget(FadeTarget::Play);
-		PlaySe(SeType::Sample);
+		//PlaySe(SeType::Sample);
 	}
 }
 

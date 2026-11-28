@@ -60,6 +60,8 @@ enum class TextureType {
 
 	ExplosionEffect,
 	WindScrewEffect,
+	PeelOffEffect,
+	PeelOffBackground,
 
 	//UI
 

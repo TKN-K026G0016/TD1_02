@@ -58,6 +58,12 @@ static std::vector<CircleEffect> circleEffects;
 
 #pragma endregion
 
+#pragma region データ: AnimEffect
+
+static std::vector<AnimEffect> animEffects;
+
+#pragma endregion
+
 #pragma region データ: ExplosionEffect
 
 struct DataExplosionEffect {
@@ -67,11 +73,9 @@ struct DataExplosionEffect {
 };
 static DataExplosionEffect dataExplosionEffect;
 
-static std::vector<ExplosionEffect> explosionEffects;
-
 #pragma endregion
 
-#pragma region データ: ExplosionEffect
+#pragma region データ: WindScrewEffect
 
 struct DataWindScrewEffect {
 	Vector2 size = { 128, 128 };
@@ -80,7 +84,16 @@ struct DataWindScrewEffect {
 };
 static DataWindScrewEffect dataWindScrewEffect;
 
-static std::vector<WindScrewEffect> windScrewEffects;
+#pragma endregion
+
+#pragma region データ: PeelOffEffect
+
+struct DataPeelOffEffect {
+	Vector2 size = { 256, 256 };
+
+	Texture texture = {};
+};
+static DataPeelOffEffect dataPeelOffEffect;
 
 #pragma endregion
 
@@ -96,44 +109,46 @@ static void UpdateCircleEffect(void);
 static void DrawCircleEffectAsObj(void);
 static void DrawCircleEffectAsUI(void);
 
-static void InitExplosionEffect(void);
-static void UpdateExplosionEffect(void);
-static void DrawExplosionEffectAsObj(void);
-static void DrawExplosionEffectAsUI(void);
+static void InitAnimEffect();
+static void UpdateAnimEffect();
+static void DrawAnimEffectAsObj();
+static void DrawAnimEffectAsUI();
 
+static void InitExplosionEffect(void);
 static void InitWindScrewEffect(void);
-static void UpdateWindScrewEffect(void);
-static void DrawWindScrewEffectAsObj(void);
-static void DrawWindScrewEffectAsUI(void);
+static void InitPeelOffEffect(void);
 
 #pragma endregion
 
 void InitEffect(void) {
 	InitTriangleEffect();
 	InitCircleEffect();
+
+	InitAnimEffect();
 	InitExplosionEffect();
 	InitWindScrewEffect();
+	InitPeelOffEffect();
 }
 
 void UpdateEffect(void) {
 	UpdateTriangleEffect();
 	UpdateCircleEffect();
-	UpdateExplosionEffect();
-	UpdateWindScrewEffect();
+
+	UpdateAnimEffect();
 }
 
 void DrawEffectAsObj(void) {
 	DrawTriangleEffectAsObj();
 	DrawCircleEffectAsObj();
-	DrawExplosionEffectAsObj();
-	DrawWindScrewEffectAsObj();
+
+	DrawAnimEffectAsObj();
 }
 
 void DrawEffectAsUI(void) {
 	DrawTriangleEffectAsUI();
 	DrawCircleEffectAsUI();
-	DrawExplosionEffectAsUI();
-	DrawWindScrewEffectAsUI();
+
+	DrawAnimEffectAsUI();
 }
 
 #pragma region 関数: TriangleEffect
@@ -427,29 +442,25 @@ bool CircleEffect::GetIsShoot(void) const {
 
 #pragma endregion
 
-#pragma region 関数: ExplosionEffect
+#pragma region 関数: AnimEffect
 
 /// <summary>
-/// ExplosionEffectの初期化処理
+/// animEffect初期化処理
 /// </summary>
-static void InitExplosionEffect(void) {
-	//データ読み込み
-	dataExplosionEffect.texture = GetTexture(TextureType::ExplosionEffect);
-
-	//全消去
-	explosionEffects.clear();
+static void InitAnimEffect(void) {
+	animEffects.clear();
 }
 
 /// <summary>
-/// ExplosionEffectの更新処理
+/// animEffect更新処理
 /// </summary>
-static void UpdateExplosionEffect(void) {
-	for (std::size_t i = 0; i < explosionEffects.size();) {
-		explosionEffects[i].Update();
+static void UpdateAnimEffect(void) {
+	for (std::size_t i = 0; i < animEffects.size();) {
+		animEffects[i].Update();
 
 		//消去処理
-		if (!explosionEffects[i].GetIsShoot()) {
-			explosionEffects.erase(explosionEffects.begin() + i);
+		if (!animEffects[i].GetIsShoot()) {
+			animEffects.erase(animEffects.begin() + i);
 
 			continue;
 		}
@@ -459,58 +470,41 @@ static void UpdateExplosionEffect(void) {
 }
 
 /// <summary>
-/// ExplosionEffectの描画処理(Obj)
+/// animEffect描画処理(obj)
 /// </summary>
-static void DrawExplosionEffectAsObj(void) {
-	for (std::size_t i = 0; i < explosionEffects.size();) {
-		explosionEffects[i].Draw(TypeDrawEffect::Obj);
+static void DrawAnimEffectAsObj(void) {
+	for (std::size_t i = 0; i < animEffects.size();) {
+		animEffects[i].Draw(TypeDrawEffect::Obj);
 
 		i++;
 	}
 }
 
 /// <summary>
-/// ExplosionEffectの描画処理(UI)
+/// animEffect描画処理(UI)
 /// </summary>
-static void DrawExplosionEffectAsUI(void) {
-	for (std::size_t i = 0; i < explosionEffects.size();) {
-		explosionEffects[i].Draw(TypeDrawEffect::UI);
+static void DrawAnimEffectAsUI(void) {
+	for (std::size_t i = 0; i < animEffects.size();) {
+		animEffects[i].Draw(TypeDrawEffect::UI);
 
 		i++;
 	}
 }
 
-/// <summary>
-/// ExplosionEffectの生成処理
-/// </summary>
-/// <param name="pos">生成座標</param>
-/// <param name="color">色</param>
-/// <param name="typeDraw">表示タイプ</param>
-void CreateExplosionEffect(Vector2 pos, unsigned int color, TypeDrawEffect typeDraw) {
-	explosionEffects.push_back(ExplosionEffect(pos, color, typeDraw));
-}
+#pragma region 関数: AnimEffectクラス
 
-#pragma region 関数: ExplosionEffectクラス
-
-/// <summary>
-/// 生成処理
-/// </summary>
-/// <param name="pos">生成座標</param>
-/// <param name="color">色</param>
-/// <param name="typeDraw">表示タイプ</param>
-ExplosionEffect::ExplosionEffect(Vector2 pos, unsigned int color, TypeDrawEffect typeDraw) {
+AnimEffect::AnimEffect(Vector2 pos, Texture texture, Vector2 size, TypeDrawEffect typeDraw) {
 	isShoot_ = true;
-	texture_ = dataExplosionEffect.texture;
 
 	pos_ = pos;
-	color_ = color;
+	texture_ = texture;
+	size_ = size;
 	typeDraw_ = typeDraw;
+
 }
 
-/// <summary>
-/// 更新処理
-/// </summary>
-void ExplosionEffect::Update(void) {
+//更新処理
+void AnimEffect::Update(void) {
 	UpdateAnimation(texture_);
 
 	//最後のアニメーションまでいったら削除
@@ -522,25 +516,47 @@ void ExplosionEffect::Update(void) {
 /// <summary>
 /// 描画処理
 /// </summary>
-/// <param name="typeDraw">表示タイプ</param>
-void ExplosionEffect::Draw(TypeDrawEffect typeDraw) {
+/// <param name="typeDraw"></param>
+void AnimEffect::Draw(TypeDrawEffect typeDraw) {
 	if (typeDraw_ != typeDraw) return;
 
-	Texture texture = texture_;
-	texture.color = color_;
 
 	if (typeDraw_ == TypeDrawEffect::Obj) {
-		DrawTextureAsObj(texture, pos_, dataExplosionEffect.size, 0.0f, false);
+		DrawTextureAsObj(texture_, pos_, size_, 0.0f, false);
+
 	} else {
-		DrawTextureAsUI(texture, pos_, dataExplosionEffect.size, 0.0f);
+		DrawTextureAsUI(texture_, pos_, size_, 0.0f);
 	}
 }
 
-bool ExplosionEffect::GetIsShoot(void) const {
+bool AnimEffect::GetIsShoot(void) const {
 	return isShoot_;
 }
 
 #pragma endregion
+
+#pragma endregion
+
+#pragma region 関数: ExplosionEffect
+
+/// <summary>
+/// ExplosionEffectの初期化処理
+/// </summary>
+static void InitExplosionEffect(void) {
+	//データ読み込み
+	dataExplosionEffect.texture = GetTexture(TextureType::ExplosionEffect);
+}
+
+/// <summary>
+/// ExplosionEffectの生成処理
+/// </summary>
+/// <param name="pos">生成座標</param>
+/// <param name="color">色</param>
+/// <param name="typeDraw">表示タイプ</param>
+void CreateExplosionEffect(Vector2 pos, TypeDrawEffect typeDraw) {
+	animEffects.push_back(AnimEffect(pos, dataExplosionEffect.texture, dataExplosionEffect.size, typeDraw));
+}
+
 
 #pragma endregion
 
@@ -552,49 +568,6 @@ bool ExplosionEffect::GetIsShoot(void) const {
 static void InitWindScrewEffect(void) {
 	//データ読み込み
 	dataWindScrewEffect.texture = GetTexture(TextureType::WindScrewEffect);
-
-	//全消去
-	windScrewEffects.clear();
-}
-
-/// <summary>
-/// windScrewEffectの更新処理
-/// </summary>
-static void UpdateWindScrewEffect(void) {
-	for (std::size_t i = 0; i < windScrewEffects.size();) {
-		windScrewEffects[i].Update();
-
-		//消去処理
-		if (!windScrewEffects[i].GetIsShoot()) {
-			windScrewEffects.erase(windScrewEffects.begin() + i);
-
-			continue;
-		}
-
-		i++;
-	}
-}
-
-/// <summary>
-/// windScrewEffectの描画処理(Obj)
-/// </summary>
-static void DrawWindScrewEffectAsObj(void) {
-	for (std::size_t i = 0; i < windScrewEffects.size();) {
-		windScrewEffects[i].Draw(TypeDrawEffect::Obj);
-
-		i++;
-	}
-}
-
-/// <summary>
-/// WindScrewEffectの描画処理(UI)
-/// </summary>
-static void DrawWindScrewEffectAsUI(void) {
-	for (std::size_t i = 0; i < windScrewEffects.size();) {
-		windScrewEffects[i].Draw(TypeDrawEffect::UI);
-
-		i++;
-	}
 }
 
 /// <summary>
@@ -603,56 +576,27 @@ static void DrawWindScrewEffectAsUI(void) {
 /// <param name="pos">生成座標</param>
 /// <param name="typeDraw">表示タイプ</param>
 void CreateWindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw) {
-	windScrewEffects.push_back(WindScrewEffect(pos, typeDraw));
-}
-
-#pragma region 関数: windScrewEffectクラス
-
-/// <summary>
-/// 生成処理
-/// </summary>
-/// <param name="pos">生成座標</param>
-/// <param name="typeDraw">表示タイプ</param>
-WindScrewEffect::WindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw) {
-	isShoot_ = true;
-	texture_ = dataWindScrewEffect.texture;
-
-	pos_ = pos;
-	typeDraw_ = typeDraw;
-}
-
-/// <summary>
-/// 更新処理
-/// </summary>
-void WindScrewEffect::Update(void) {
-	UpdateAnimation(texture_);
-
-	//最後のアニメーションまでいったら削除
-	if (texture_.animNum >= texture_.animLimit) {
-		isShoot_ = false;
-	}
-}
-
-/// <summary>
-/// 描画処理
-/// </summary>
-/// <param name="typeDraw">表示タイプ</param>
-void WindScrewEffect::Draw(TypeDrawEffect typeDraw) {
-	if (typeDraw_ != typeDraw) return;
-
-	Texture texture = texture_;
-
-	if (typeDraw_ == TypeDrawEffect::Obj) {
-		DrawTextureAsObj(texture, pos_, dataWindScrewEffect.size, 0.0f, false);
-	} else {
-		DrawTextureAsUI(texture, pos_, dataWindScrewEffect.size, 0.0f);
-	}
-}
-
-bool WindScrewEffect::GetIsShoot(void) const {
-	return isShoot_;
+	animEffects.push_back(AnimEffect(pos, dataWindScrewEffect.texture, dataWindScrewEffect.size, typeDraw));
 }
 
 #pragma endregion
+
+#pragma region 関数: PeelOffEffect
+
+/// <summary>
+/// PeelOffEffectのデータ読み込み処理
+/// </summary>
+static void InitPeelOffEffect(void) {
+	dataPeelOffEffect.texture = GetTexture(TextureType::PeelOffEffect);
+}
+
+/// <summary>
+/// PeelOffEffectの生成処理
+/// </summary>
+/// <param name="pos">生成座標</param>
+/// <param name="typeDraw">表示タイプ</param>
+void CreatePeelOffEffect(Vector2 pos, TypeDrawEffect typeDraw) {
+	animEffects.push_back(AnimEffect(pos, dataPeelOffEffect.texture, dataPeelOffEffect.size, typeDraw));
+}
 
 #pragma endregion

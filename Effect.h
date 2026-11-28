@@ -87,48 +87,25 @@ private:
 
 #pragma endregion
 
-#pragma region データ: ExplosionEffect
+#pragma region データ: AnimEffect
 
-class ExplosionEffect {
+class AnimEffect {
 public:
-	ExplosionEffect(Vector2 pos, unsigned int color,  TypeDrawEffect typeDraw);
+	AnimEffect(Vector2 pos, Texture texture, Vector2 size, TypeDrawEffect typeDraw);
 
 	void Update(void);
 	void Draw(TypeDrawEffect typeDraw);
 
 	bool GetIsShoot(void) const;
 
-private:
+protected:
 	Vector2 pos_ = {};
-	bool isShoot_ = false;
+	Vector2 size_ = {};
+	Texture texture_ = {};
+
+	bool isShoot_ = true;
 
 	TypeDrawEffect typeDraw_ = TypeDrawEffect::Obj;
-
-	unsigned int color_ = WHITE;
-
-	Texture texture_ = {};
-};
-
-#pragma endregion
-
-#pragma region データ: WindScrewEffect
-
-class WindScrewEffect {
-public:
-	WindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw);
-
-	void Update(void);
-	void Draw(TypeDrawEffect typeDraw);
-
-	bool GetIsShoot(void) const;
-
-private:
-	Vector2 pos_ = {};
-	bool isShoot_ = false;
-
-	TypeDrawEffect typeDraw_ = TypeDrawEffect::Obj;
-
-	Texture texture_ = {};
 };
 
 #pragma endregion
@@ -140,5 +117,7 @@ void DrawEffectAsUI(void);
 
 void CreateTriangleEffect(Vector2 pos, float sizeValue, float moveSpeed, float moveTheta, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
 void CreateCircleEffect(Vector2 pos, float endSizeValue, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
-void CreateExplosionEffect(Vector2 pos, unsigned int color, TypeDrawEffect typeDraw);
+
+void CreateExplosionEffect(Vector2 pos, TypeDrawEffect typeDraw);
 void CreateWindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw);
+void CreatePeelOffEffect(Vector2 pos, TypeDrawEffect typeDraw);
