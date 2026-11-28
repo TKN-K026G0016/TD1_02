@@ -30,5 +30,6 @@ void DrawPlay(void) {
     
     DrawStage();
     DrawEffectAsObj();
+
     DrawEffectAsUI();
 }

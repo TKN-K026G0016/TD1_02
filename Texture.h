@@ -58,6 +58,8 @@ enum class TextureType {
 	ParticleCircle,
 	ParticleSquare,
 
+	ExplosionEffect,
+
 	//UI
 
 	//===============
