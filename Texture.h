@@ -42,6 +42,9 @@ enum class TextureType {
 	//Enemy
 	BossForm1Body,
 
+	Bolt,
+	BoltMeter,
+
 	//MapChip
 	SampleMapChip,
 
@@ -51,6 +54,7 @@ enum class TextureType {
 	Background1Form2,
 	Background2Form2,
 	Background3Form2,
+
 
 
 	//Effect

@@ -37,6 +37,9 @@ void InitTexture(void) {
 		//Enemy
 		{ AssetEditor::Handle(AssetEditor::BossBody), { 256, 256 }, {0}, 0, 0, WHITE },
 
+		{ Novice::LoadTexture("./resources/texture/boss/bolt.png"), { 32, 32 }, {0}, 0, 0, WHITE },
+		{ Novice::LoadTexture("./resources/texture/boss/bolt_meter.png"), { 32, 32 }, {0}, 0, 0, WHITE },
+
 		//MapChip
 		{ AssetEditor::Handle(AssetEditor::MapChip), { 32, 32 }, {0}, 0, 0, WHITE },
 
