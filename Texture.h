@@ -59,8 +59,10 @@ enum class TextureType {
 	ParticleSquare,
 
 	ExplosionEffect,
+	WindScrewEffect,
 
 	//UI
+
 
 	//===============
 	//Gameover

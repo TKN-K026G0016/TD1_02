@@ -111,6 +111,28 @@ private:
 
 #pragma endregion
 
+#pragma region データ: WindScrewEffect
+
+class WindScrewEffect {
+public:
+	WindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw);
+
+	void Update(void);
+	void Draw(TypeDrawEffect typeDraw);
+
+	bool GetIsShoot(void) const;
+
+private:
+	Vector2 pos_ = {};
+	bool isShoot_ = false;
+
+	TypeDrawEffect typeDraw_ = TypeDrawEffect::Obj;
+
+	Texture texture_ = {};
+};
+
+#pragma endregion
+
 void InitEffect(void);
 void UpdateEffect(void);
 void DrawEffectAsObj(void);
@@ -119,3 +141,4 @@ void DrawEffectAsUI(void);
 void CreateTriangleEffect(Vector2 pos, float sizeValue, float moveSpeed, float moveTheta, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
 void CreateCircleEffect(Vector2 pos, float endSizeValue, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
 void CreateExplosionEffect(Vector2 pos, unsigned int color, TypeDrawEffect typeDraw);
+void CreateWindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw);

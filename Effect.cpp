@@ -37,19 +37,6 @@ static std::vector<TriangleEffect> triangleEffects;
 
 #pragma endregion
 
-#pragma region データ: ExplosionEffect
-
-struct DataExplosionEffect {
-	Vector2 size = { 128, 128 };
-
-	Texture texture = {};
-};
-static DataExplosionEffect dataExplosionEffect;
-
-static std::vector<ExplosionEffect> explosionEffects;
-
-#pragma endregion
-
 #pragma region データ: CircleEffect
 
 struct DataCircleEffect {
@@ -71,6 +58,32 @@ static std::vector<CircleEffect> circleEffects;
 
 #pragma endregion
 
+#pragma region データ: ExplosionEffect
+
+struct DataExplosionEffect {
+	Vector2 size = { 128, 128 };
+
+	Texture texture = {};
+};
+static DataExplosionEffect dataExplosionEffect;
+
+static std::vector<ExplosionEffect> explosionEffects;
+
+#pragma endregion
+
+#pragma region データ: ExplosionEffect
+
+struct DataWindScrewEffect {
+	Vector2 size = { 128, 128 };
+
+	Texture texture = {};
+};
+static DataWindScrewEffect dataWindScrewEffect;
+
+static std::vector<WindScrewEffect> windScrewEffects;
+
+#pragma endregion
+
 #pragma region 宣言: 関数
 
 static void InitTriangleEffect(void);
@@ -88,30 +101,39 @@ static void UpdateExplosionEffect(void);
 static void DrawExplosionEffectAsObj(void);
 static void DrawExplosionEffectAsUI(void);
 
+static void InitWindScrewEffect(void);
+static void UpdateWindScrewEffect(void);
+static void DrawWindScrewEffectAsObj(void);
+static void DrawWindScrewEffectAsUI(void);
+
 #pragma endregion
 
 void InitEffect(void) {
 	InitTriangleEffect();
 	InitCircleEffect();
 	InitExplosionEffect();
+	InitWindScrewEffect();
 }
 
 void UpdateEffect(void) {
 	UpdateTriangleEffect();
 	UpdateCircleEffect();
 	UpdateExplosionEffect();
+	UpdateWindScrewEffect();
 }
 
 void DrawEffectAsObj(void) {
 	DrawTriangleEffectAsObj();
 	DrawCircleEffectAsObj();
 	DrawExplosionEffectAsObj();
+	DrawWindScrewEffectAsObj();
 }
 
 void DrawEffectAsUI(void) {
 	DrawTriangleEffectAsUI();
 	DrawCircleEffectAsUI();
 	DrawExplosionEffectAsUI();
+	DrawWindScrewEffectAsUI();
 }
 
 #pragma region 関数: TriangleEffect
@@ -515,6 +537,119 @@ void ExplosionEffect::Draw(TypeDrawEffect typeDraw) {
 }
 
 bool ExplosionEffect::GetIsShoot(void) const {
+	return isShoot_;
+}
+
+#pragma endregion
+
+#pragma endregion
+
+#pragma region 関数: WindScrewEffect
+
+/// <summary>
+/// windScrewEffectの初期化処理
+/// </summary>
+static void InitWindScrewEffect(void) {
+	//データ読み込み
+	dataWindScrewEffect.texture = GetTexture(TextureType::WindScrewEffect);
+
+	//全消去
+	windScrewEffects.clear();
+}
+
+/// <summary>
+/// windScrewEffectの更新処理
+/// </summary>
+static void UpdateWindScrewEffect(void) {
+	for (std::size_t i = 0; i < windScrewEffects.size();) {
+		windScrewEffects[i].Update();
+
+		//消去処理
+		if (!windScrewEffects[i].GetIsShoot()) {
+			windScrewEffects.erase(windScrewEffects.begin() + i);
+
+			continue;
+		}
+
+		i++;
+	}
+}
+
+/// <summary>
+/// windScrewEffectの描画処理(Obj)
+/// </summary>
+static void DrawWindScrewEffectAsObj(void) {
+	for (std::size_t i = 0; i < windScrewEffects.size();) {
+		windScrewEffects[i].Draw(TypeDrawEffect::Obj);
+
+		i++;
+	}
+}
+
+/// <summary>
+/// WindScrewEffectの描画処理(UI)
+/// </summary>
+static void DrawWindScrewEffectAsUI(void) {
+	for (std::size_t i = 0; i < windScrewEffects.size();) {
+		windScrewEffects[i].Draw(TypeDrawEffect::UI);
+
+		i++;
+	}
+}
+
+/// <summary>
+/// windScrewEffectの生成処理
+/// </summary>
+/// <param name="pos">生成座標</param>
+/// <param name="typeDraw">表示タイプ</param>
+void CreateWindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw) {
+	windScrewEffects.push_back(WindScrewEffect(pos, typeDraw));
+}
+
+#pragma region 関数: windScrewEffectクラス
+
+/// <summary>
+/// 生成処理
+/// </summary>
+/// <param name="pos">生成座標</param>
+/// <param name="typeDraw">表示タイプ</param>
+WindScrewEffect::WindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw) {
+	isShoot_ = true;
+	texture_ = dataWindScrewEffect.texture;
+
+	pos_ = pos;
+	typeDraw_ = typeDraw;
+}
+
+/// <summary>
+/// 更新処理
+/// </summary>
+void WindScrewEffect::Update(void) {
+	UpdateAnimation(texture_);
+
+	//最後のアニメーションまでいったら削除
+	if (texture_.animNum >= texture_.animLimit) {
+		isShoot_ = false;
+	}
+}
+
+/// <summary>
+/// 描画処理
+/// </summary>
+/// <param name="typeDraw">表示タイプ</param>
+void WindScrewEffect::Draw(TypeDrawEffect typeDraw) {
+	if (typeDraw_ != typeDraw) return;
+
+	Texture texture = texture_;
+
+	if (typeDraw_ == TypeDrawEffect::Obj) {
+		DrawTextureAsObj(texture, pos_, dataWindScrewEffect.size, 0.0f, false);
+	} else {
+		DrawTextureAsUI(texture, pos_, dataWindScrewEffect.size, 0.0f);
+	}
+}
+
+bool WindScrewEffect::GetIsShoot(void) const {
 	return isShoot_;
 }
 

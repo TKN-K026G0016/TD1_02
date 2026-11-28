@@ -53,7 +53,7 @@ void InitTexture(void) {
 		{ Novice::LoadTexture("./resources/texture/effect/particle/square.png"), { 128, 128 }, {0}, 0, 0, WHITE },
 
 		{ Novice::LoadTexture("./resources/texture/effect/explosion_effect.png"), { 128, 128 }, {3}, 7, 0, WHITE },
-
+		{ Novice::LoadTexture("./resources/texture/effect/wind_screw_effect.png"), { 128, 128 }, {2}, 10, 0, WHITE },
 
 		//UI
 
