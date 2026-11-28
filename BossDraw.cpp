@@ -3,6 +3,7 @@
 #include "Stage2Tuning.h"
 #include "BossCombatEditorSettings.h"
 #include "Camera.h"
+#include "Texture.h"
 #include "PortalDraw.h"
 #include <cmath>
 #include <cstring>
@@ -13,6 +14,13 @@ using PortalMath::Clamp;
 using PortalMath::Abs;
 using PortalMath::Dist2;
 using PortalMath::Approach;
+
+#pragma region データ: テクスチャ
+
+static Texture boltTexture = GetTexture(TextureType::Bolt);
+static Texture boltMeterTexture = GetTexture(TextureType::BoltMeter);
+
+#pragma endregion
 
 namespace {
     // コマ・ヨーヨーは既存の専用PNGを原寸表示する。
@@ -170,6 +178,10 @@ void Boss::Draw() const {
         const Vector2 point = GetAccessoryGripPoint(i);
         PortalDraw::Box(point, 11.0f, 3.0f, 0xC6ECFFFF);
         PortalDraw::Box(point, 3.0f, 11.0f, 0xC6ECFFFF);
+
+        boltTexture = GetTexture(TextureType::Bolt);
+        DrawTextureAsObj(boltTexture, point, { 32, 32 }, 0.0f, false);
+
     }
     // 【連打演出】本体の白BOXを再利用。色を重ねるだけで追加描画は最大1BOX。
     // 256x256の元サイズは変えず、連打で一瞬赤く点滅する。

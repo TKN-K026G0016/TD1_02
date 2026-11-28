@@ -1402,6 +1402,8 @@ namespace ExactBattleCommon {
 
 				// 杭(ひっかけポイント)
 				for (int si = 0; si < kStakeNum; si++) {
+					if (si >= ExactPlayerBattle::BossAnchorStart()) continue;
+
 					Stake& stk = stakes[si];
 					int px = RoundPx(stk.pos.x) - kTileSize / 2;
 					int py = RoundPx(stk.pos.y) - kTileSize / 2;
