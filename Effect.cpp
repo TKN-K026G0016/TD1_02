@@ -24,7 +24,7 @@ struct DataTriangleEffect {
 	float startFadeEasingT = 0.1f;
 
 	//通常のイージング速度
-	float basicEasingSpeed = 0.01f;
+	float basicEasingSpeed = 0.085f;
 	//イージングモード
 	EasingMode easingMode = EasingMode::EaseOut;
 
@@ -55,6 +55,25 @@ struct DataCircleEffect {
 static DataCircleEffect dataCircleEffect;
 
 static std::vector<CircleEffect> circleEffects;
+
+#pragma endregion
+
+#pragma region データ: PeelOffBackground
+
+struct DataPeelOffBackground {
+	Vector2 pos = { 640, 360 };
+
+	Vector2 size = { 1280, 720 };
+
+	float easingSpeed = 0.05f;
+	float startFadeEasingT = 0.1f;
+	EasingMode easingMode = EasingMode::EaseIn;
+
+	Texture texture = {};
+};
+static DataPeelOffBackground dataPeelOffBackground;
+
+static std::vector<PeelOffBackground> peelOffBackgrounds;
 
 #pragma endregion
 
@@ -109,6 +128,10 @@ static void UpdateCircleEffect(void);
 static void DrawCircleEffectAsObj(void);
 static void DrawCircleEffectAsUI(void);
 
+static void InitPeelOffBackground(void);
+static void UpdatePeelOffBackground(void);
+static void DrawPeelOffBackground(void);
+
 static void InitAnimEffect();
 static void UpdateAnimEffect();
 static void DrawAnimEffectAsObj();
@@ -123,6 +146,7 @@ static void InitPeelOffEffect(void);
 void InitEffect(void) {
 	InitTriangleEffect();
 	InitCircleEffect();
+	InitPeelOffBackground();
 
 	InitAnimEffect();
 	InitExplosionEffect();
@@ -133,11 +157,17 @@ void InitEffect(void) {
 void UpdateEffect(void) {
 	UpdateTriangleEffect();
 	UpdateCircleEffect();
+	UpdatePeelOffBackground();
 
 	UpdateAnimEffect();
 }
 
+void DrawEffectAsBG(void) {
+	DrawPeelOffBackground();
+}
+
 void DrawEffectAsObj(void) {
+
 	DrawTriangleEffectAsObj();
 	DrawCircleEffectAsObj();
 
@@ -435,6 +465,89 @@ void CircleEffect::Draw(TypeDrawEffect typeDraw) {
 }
 
 bool CircleEffect::GetIsShoot(void) const {
+	return isShoot_;
+}
+
+#pragma endregion
+
+#pragma endregion
+
+#pragma region 関数: PeelOffBackground
+
+static void InitPeelOffBackground(void) {
+	//データの取得
+	dataPeelOffBackground.texture = GetTexture(TextureType::PeelOffBackground);
+
+	//全削除
+	peelOffBackgrounds.clear();
+}
+
+static void UpdatePeelOffBackground(void) {
+	for (std::size_t i = 0; i < peelOffBackgrounds.size();) {
+		peelOffBackgrounds[i].Update();
+
+		if (!peelOffBackgrounds[i].GetIsShoot()) {
+			peelOffBackgrounds.erase(peelOffBackgrounds.begin() + i);
+
+			continue;
+		}
+
+		i++;
+	}
+}
+
+static void DrawPeelOffBackground(void) {
+	for (std::size_t i = 0; i < peelOffBackgrounds.size();) {
+		peelOffBackgrounds[i].Draw();
+
+		i++;
+	}
+}
+
+/// <summary>
+/// 引き剝がし背景演出の生成処理
+/// </summary>
+void CreatePeelOffBackground(void) {
+	peelOffBackgrounds.push_back(PeelOffBackground());
+}
+
+#pragma region 関数: PeelOffBackgroundクラス
+
+PeelOffBackground::PeelOffBackground() {
+	isShoot_ = true;
+	alpha_ = kAlphaMin;
+}
+
+void PeelOffBackground::Update(void) {
+	easingT_ += dataPeelOffBackground.easingSpeed;
+	if (easingT_ >= 1.0f) {
+		easingT_ = 1.0f;
+		isShoot_ = false;
+	}
+
+	//フェードイン
+	if (easingT_ < dataPeelOffBackground.startFadeEasingT) {
+		float localT = easingT_ / dataPeelOffBackground.startFadeEasingT;
+		float easedT = CreateEasedT(localT, dataPeelOffBackground.easingMode);
+		alpha_ = UpdateValueByEasing(kAlphaMin, kAlphaMax, easedT);
+	}
+	//フェードアウト
+	else {
+		float localT = (easingT_ - dataPeelOffBackground.startFadeEasingT) / (1.0f - dataPeelOffBackground.startFadeEasingT);
+		float easedT = CreateEasedT(localT, dataPeelOffBackground.easingMode);
+		alpha_ = UpdateValueByEasing(kAlphaMax, kAlphaMin, easedT);
+	}
+
+}
+
+void PeelOffBackground::Draw(void) {
+	Texture texture = dataPeelOffBackground.texture;
+	texture.color = (WHITE & 0xFFFFFF00) | alpha_;
+
+	DrawTextureAsUI(texture, dataPeelOffBackground.pos, dataPeelOffBackground.size, 0.0f);
+}
+
+bool PeelOffBackground::GetIsShoot(void) const {
 	return isShoot_;
 }
 

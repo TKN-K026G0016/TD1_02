@@ -17,8 +17,6 @@ void InitPlay(void) {
     InitStage();
     InitEffect();
     UpdateCamera(); 
-
-    CreatePeelOffEffect({ 640, 360 }, TypeDrawEffect::Obj);
 }
 
 void UpdatePlay(void) {
@@ -31,6 +29,7 @@ void UpdatePlay(void) {
 void DrawPlay(void) {
     
     DrawStage();
+    DrawEffectAsBG();
     DrawEffectAsObj();
 
     DrawEffectAsUI();

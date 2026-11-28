@@ -87,6 +87,29 @@ private:
 
 #pragma endregion
 
+#pragma region データ: PeelOffBackground
+
+class PeelOffBackground {
+public:
+	PeelOffBackground();
+
+	void Update(void);
+	void Draw(void);
+
+	bool GetIsShoot(void) const;
+
+private:
+	Vector2 pos_ = {};
+	bool isShoot_ = false;
+
+	//<イージング関係>
+	float easingT_ = 0.0f;
+
+	int alpha_ = 0;
+};
+
+#pragma endregion
+
 #pragma region データ: AnimEffect
 
 class AnimEffect {
@@ -112,11 +135,14 @@ protected:
 
 void InitEffect(void);
 void UpdateEffect(void);
+void DrawEffectAsBG(void);
 void DrawEffectAsObj(void);
 void DrawEffectAsUI(void);
 
 void CreateTriangleEffect(Vector2 pos, float sizeValue, float moveSpeed, float moveTheta, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
 void CreateCircleEffect(Vector2 pos, float endSizeValue, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
+
+void CreatePeelOffBackground(void);
 
 void CreateExplosionEffect(Vector2 pos, TypeDrawEffect typeDraw);
 void CreateWindScrewEffect(Vector2 pos, TypeDrawEffect typeDraw);
