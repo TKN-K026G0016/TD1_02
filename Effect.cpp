@@ -50,12 +50,38 @@ static std::vector<ExplosionEffect> explosionEffects;
 
 #pragma endregion
 
+#pragma region データ: CircleEffect
+
+struct DataCircleEffect {
+	float startSizeValue = 0.0f;
+
+	//透明化が始まるタイミング
+	float startFadeEasingT = 0.1f;
+
+	//通常のイージング速度
+	float basicEasingSpeed = 0.01f;
+	//イージングモード
+	EasingMode easingMode = EasingMode::EaseOut;
+
+	Texture texture = {};
+};
+static DataCircleEffect dataCircleEffect;
+
+static std::vector<CircleEffect> circleEffects;
+
+#pragma endregion
+
 #pragma region 宣言: 関数
 
 static void InitTriangleEffect(void);
 static void UpdateTriangleEffect(void);
 static void DrawTriangleEffectAsObj(void);
 static void DrawTriangleEffectAsUI(void);
+
+static void InitCircleEffect(void);
+static void UpdateCircleEffect(void);
+static void DrawCircleEffectAsObj(void);
+static void DrawCircleEffectAsUI(void);
 
 static void InitExplosionEffect(void);
 static void UpdateExplosionEffect(void);
@@ -66,21 +92,25 @@ static void DrawExplosionEffectAsUI(void);
 
 void InitEffect(void) {
 	InitTriangleEffect();
+	InitCircleEffect();
 	InitExplosionEffect();
 }
 
 void UpdateEffect(void) {
 	UpdateTriangleEffect();
+	UpdateCircleEffect();
 	UpdateExplosionEffect();
 }
 
 void DrawEffectAsObj(void) {
 	DrawTriangleEffectAsObj();
+	DrawCircleEffectAsObj();
 	DrawExplosionEffectAsObj();
 }
 
 void DrawEffectAsUI(void) {
 	DrawTriangleEffectAsUI();
+	DrawCircleEffectAsUI();
 	DrawExplosionEffectAsUI();
 }
 
@@ -191,8 +221,7 @@ void TriangleEffect::Draw(TypeDrawEffect typeDraw) {
 
 	if (typeDraw_ == TypeDrawEffect::Obj) {
 		DrawTextureAsObj(texture, pos_, size, rotateTheta_, false);
-	}
-	else {
+	} else {
 		DrawTextureAsUI(texture, pos_, size, rotateTheta_);
 	}
 }
@@ -228,6 +257,147 @@ void TriangleEffect::Easing(void) {
 }
 
 bool TriangleEffect::GetIsShoot(void) const {
+	return isShoot_;
+}
+
+#pragma endregion
+
+#pragma endregion
+
+#pragma region 関数: CircleEffect
+
+/// <summary>
+/// CircleEffectの初期化処理
+/// </summary>
+static void InitCircleEffect(void) {
+	//テクスチャの取得
+	dataCircleEffect.texture = GetTexture(TextureType::ParticleCircle);
+
+	//全消去
+	circleEffects.clear();
+}
+
+/// <summary>
+/// CircleEffectの更新処理
+/// </summary>
+static void UpdateCircleEffect(void) {
+	for (std::size_t i = 0; i < circleEffects.size();) {
+		circleEffects[i].Update();
+
+		if (!circleEffects[i].GetIsShoot()) {
+			circleEffects.erase(circleEffects.begin() + i);
+
+			continue;
+		}
+
+		i++;
+	}
+}
+
+/// <summary>
+/// CircleEffectの描画処理(Obj)
+/// </summary>
+static void DrawCircleEffectAsObj(void) {
+	for (std::size_t i = 0; i < circleEffects.size();) {
+		circleEffects[i].Draw(TypeDrawEffect::Obj);
+
+		i++;
+	}
+}
+
+/// <summary>
+/// CircleEffectの描画処理(UI)
+/// </summary>
+static void DrawCircleEffectAsUI(void) {
+	for (std::size_t i = 0; i < circleEffects.size();) {
+		circleEffects[i].Draw(TypeDrawEffect::UI);
+
+		i++;
+	}
+}
+
+/// <summary>
+/// CircleEffectの生成処理
+/// </summary>
+/// <param name="pos">生成座標</param>
+/// <param name="endSizeValue">最終的なサイズ</param>
+/// <param name="easingSpeed">イージング速度</param>
+/// <param name="color">色</param>
+/// <param name="typeDraw">表示タイプ</param>
+void CreateCircleEffect(Vector2 pos, float endSizeValue, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw) {
+	circleEffects.push_back(CircleEffect(pos, endSizeValue, easingSpeed, color, typeDraw));
+}
+
+#pragma region 関数: CircleEffectクラス
+
+/// <summary>
+/// 生成処理
+/// </summary>
+/// <param name="pos">生成座標</param>
+/// <param name="endSizeValue">最終的なサイズ</param>
+/// <param name="easingSpeed">イージング速度</param>
+/// <param name="color">色</param>
+/// <param name="typeDraw">表示タイプ</param>
+CircleEffect::CircleEffect(Vector2 pos, float endSizeValue, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw) {
+	isShoot_ = true;
+	alpha_ = kAlphaMax;
+
+	if (easingSpeed <= 0.0f) {
+		easingSpeed = dataCircleEffect.basicEasingSpeed;
+	}
+
+	pos_ = pos;
+	endSizeValue_ = endSizeValue;
+	easingSpeed_ = easingSpeed;
+	color_ = color;
+	typeDraw_ = typeDraw;
+}
+
+/// <summary>
+/// 更新処理
+/// </summary>
+void CircleEffect::Update(void) {
+	//easingT増加処理
+	easingT_ += easingSpeed_;
+	if (easingT_ >= 1.0f) {
+		easingT_ = 1.0f;
+		isShoot_ = false;
+	}
+
+	//拡大処理
+	{
+		float easedT = CreateEasedT(easingT_, dataCircleEffect.easingMode);
+		sizeValue_ = UpdateValueByEasing(dataCircleEffect.startSizeValue, endSizeValue_, easedT);
+	}
+
+	if (easingT_ >= dataCircleEffect.startFadeEasingT) {
+
+		float localT = (easingT_ - dataCircleEffect.startFadeEasingT) / (1.0f - dataCircleEffect.startFadeEasingT);
+		float easedT = CreateEasedT(localT, dataCircleEffect.easingMode);
+		alpha_ = UpdateValueByEasing(kAlphaMax, kAlphaMin, easedT);
+	}
+}
+
+/// <summary>
+/// 描画処理
+/// </summary>
+void CircleEffect::Draw(TypeDrawEffect typeDraw) {
+	if (typeDraw_ != typeDraw) return;
+
+	Vector2 size = { sizeValue_, sizeValue_ };
+
+	Texture texture = dataCircleEffect.texture;
+	texture.color = (color_ & 0xFFFFFF00) | alpha_;
+
+	if (typeDraw_ == TypeDrawEffect::Obj) {
+		DrawTextureAsObj(texture, pos_, size, 0.0f, false);
+	} else {
+		DrawTextureAsUI(texture, pos_, size, 0.0f);
+	}
+
+}
+
+bool CircleEffect::GetIsShoot(void) const {
 	return isShoot_;
 }
 

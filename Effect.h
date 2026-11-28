@@ -13,7 +13,7 @@ enum class TypeDrawEffect {
 	UI,
 };
 
-#pragma region データ: rotateTriangle
+#pragma region データ: TriangleEffect
 
 class TriangleEffect {
 public:
@@ -56,6 +56,37 @@ private:
 
 #pragma endregion
 
+#pragma region データ: ScaleUpCircleEffect
+
+class CircleEffect {
+public:
+	CircleEffect(Vector2 pos, float endSizeValue, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
+
+	void Update(void);
+	void Draw(TypeDrawEffect typeDraw);
+
+	bool GetIsShoot(void) const;
+
+private:
+	Vector2 pos_ = {};
+	bool isShoot_ = false;
+	TypeDrawEffect typeDraw_ = TypeDrawEffect::Obj;
+
+	//<サイズ関係>
+	float sizeValue_ = 0.0f;
+	float endSizeValue_ = 0.0f;
+
+	//<イージング関係>
+	float easingT_ = 0.0f;
+	float easingSpeed_ = 0.0f;
+
+	int alpha_ = 0;
+
+	unsigned int color_ = WHITE;
+};
+
+#pragma endregion
+
 #pragma region データ: ExplosionEffect
 
 class ExplosionEffect {
@@ -86,4 +117,5 @@ void DrawEffectAsObj(void);
 void DrawEffectAsUI(void);
 
 void CreateTriangleEffect(Vector2 pos, float sizeValue, float moveSpeed, float moveTheta, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
+void CreateCircleEffect(Vector2 pos, float endSizeValue, float easingSpeed, unsigned int color, TypeDrawEffect typeDraw);
 void CreateExplosionEffect(Vector2 pos, unsigned int color, TypeDrawEffect typeDraw);
