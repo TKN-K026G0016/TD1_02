@@ -57,7 +57,27 @@ namespace {
     }
 }
 
+/// <summary>
+/// ネジの描画処理
+/// </summary>
+void Boss::DrawBolts(void) const {
+    boltTexture = GetTexture(TextureType::Bolt);
 
+    for (int i = 0; i < kAccessoryGripCount; ++i) {
+        if (!IsAccessoryGripEnabled(i)) continue;
+        DrawTextureAsObj(boltTexture, GetAccessoryGripPoint(i), { 32,32 }, 0.0f, false);
+    }
+
+    for (int i = 0; i < BossStage1::kArmorPlates; ++i) {
+        if (!IsArmorAttached(i)) continue;
+
+        DrawTextureAsObj(boltTexture, GetArmorGripPoint(i), { 32,32 }, 0.0f, false);
+    }
+}
+
+/// <summary>
+/// 描画処理
+/// </summary>
 void Boss::Draw() const {
     // ステージ2の退場飛行。画面端に旧VFXや尻尾が残らないよう、
     // 機体の中心が退場したらボスの描画一式を停止する。
@@ -172,17 +192,20 @@ void Boss::Draw() const {
         // ステージ2でPNGが無い場合にも第1形態へ戻さず、仮の機体を表示。
         PortalDraw::RotatedBox(position_, 145.0f, 52.0f, 0.0f, 0xC8D7E8FF);
     }
-    // ボス側のグリップポイントを画像より手前に表示する。
-    for (int i = 0; i < kAccessoryGripCount; ++i) {
-        if (!IsAccessoryGripEnabled(i)) continue;
-        const Vector2 point = GetAccessoryGripPoint(i);
-        //PortalDraw::Box(point, 11.0f, 3.0f, 0xC6ECFFFF);
-        //PortalDraw::Box(point, 3.0f, 11.0f, 0xC6ECFFFF);
 
-        boltTexture = GetTexture(TextureType::Bolt);
-        DrawTextureAsObj(boltTexture, point, { 32, 32 }, 0.0f, false);
+    //ネジの描画
+    DrawBolts();
 
-    }
+    //// ボス側のグリップポイントを画像より手前に表示する。
+    //for (int i = 0; i < kAccessoryGripCount; ++i) {
+    //    if (!IsAccessoryGripEnabled(i)) continue;
+    //    const Vector2 point = GetAccessoryGripPoint(i);
+    //    PortalDraw::Box(point, 11.0f, 3.0f, 0xC6ECFFFF);
+    //    PortalDraw::Box(point, 3.0f, 11.0f, 0xC6ECFFFF);
+
+    //    DrawTextureAsObj(boltTexture, point, { 32, 32 }, 0.0f, false);
+
+    //}
     // 【連打演出】本体の白BOXを再利用。色を重ねるだけで追加描画は最大1BOX。
     // 256x256の元サイズは変えず、連打で一瞬赤く点滅する。
     if (state_ == BossState::ArmorStun && mashCount_ > 0 && stateFrame_ % 6 < 2) {
@@ -198,24 +221,24 @@ void Boss::Draw() const {
             position_.y - 85.0f + std::cos(angle) * 84.0f };
         PortalDraw::RotatedBox(shellCenter, 226.0f, 22.0f, angle, 0xB7C4D1CC);
     }
-    // プロペラ3本が破壊対象。本体はグリップ可能でも剥がれない。
-    // 各板の上に小さな黄色の十字を描き、そこへ触手を当てて引き剥がす。
-    // 表示1枚あたりBOX3個。板が減れば描画も減る。
-    for (int i = 0;i < BossStage1::kArmorPlates;++i) {
-        if (IsArmorAttached(i)) {
-            const Vector2 p = GetArmorGripPoint(i);
-            // 本体のポイントは移動用。プロペラだけが外れる。
-            //const float tension = i == armorStrainPlate_ ? armorStrain_ : 0.0f;
-            //PortalDraw::RotatedBox({ p.x,p.y - 6.0f + tension * 4.0f },
-            //    34.0f + tension * 12.0f, 16.0f - tension * 4.0f,
-            //    tension * (i == 0 ? -0.24f : 0.24f), tension > 0.55f ? 0xFFF0B0FF : 0xA7B1C1FF);
-            //PortalDraw::Box(p, 13.0f, 3.0f, 0xFFE16AFF);
-            //PortalDraw::Box(p, 3.0f, 13.0f, 0xFFE16AFF);
+    //// プロペラ3本が破壊対象。本体はグリップ可能でも剥がれない。
+    //// 各板の上に小さな黄色の十字を描き、そこへ触手を当てて引き剥がす。
+    //// 表示1枚あたりBOX3個。板が減れば描画も減る。
+    //for (int i = 0;i < BossStage1::kArmorPlates;++i) {
+    //    if (IsArmorAttached(i)) {
+    //        const Vector2 p = GetArmorGripPoint(i);
+    //        // 本体のポイントは移動用。プロペラだけが外れる。
+    //        const float tension = i == armorStrainPlate_ ? armorStrain_ : 0.0f;
+    //        PortalDraw::RotatedBox({ p.x,p.y - 6.0f + tension * 4.0f },
+    //            34.0f + tension * 12.0f, 16.0f - tension * 4.0f,
+    //            tension * (i == 0 ? -0.24f : 0.24f), tension > 0.55f ? 0xFFF0B0FF : 0xA7B1C1FF);
+    //        PortalDraw::Box(p, 13.0f, 3.0f, 0xFFE16AFF);
+    //        PortalDraw::Box(p, 3.0f, 13.0f, 0xFFE16AFF);
 
-            DrawTextureAsObj(boltTexture, p, { 32, 32 }, 0.0f, false);
-        }
+    //        DrawTextureAsObj(boltTexture, p, { 32, 32 }, 0.0f, false);
+    //    }
 
-    }
+    //}
     if (state_ == BossState::Dizzy || state_ == BossState::ArmorStun || state_ == BossState::ArmorImpact) {
         // 回避成功の合図：本体の上に黄色BOXを1枚。新規パーティクル不要。
         PortalDraw::Box({ position_.x,position_.y + 53.0f }, 49.0f, 7.0f, 0xFFEA73FF);

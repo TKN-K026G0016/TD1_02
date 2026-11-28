@@ -36,7 +36,10 @@ public:
 	bool BeginScrewRepair(int screwIndex);
 	bool IsRepairingScrew() const { return state_ == BossState::ScrewRepair; }
 	int RepairScrewIndex() const { return repairingScrew_; }
+
+	//描画処理
 	void Draw() const;
+	void DrawBolts() const;
 
 	// グラップルの綱も外装剥がしに使う。第2引数はその判定。
 	// 戻り値: このフレームにダメージ/外装ヒットが成立したらtrue。
